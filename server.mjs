@@ -342,11 +342,15 @@ function parseDuration(text) {
 
 // ─────────────────────────────────────────────
 // serve frontend
+
+// ─────────────────────────────────────────────
+// serve frontend
 // ─────────────────────────────────────────────
 
 app.use(express.static(path.join(__dirname, "dist")));
 
-app.use((req, res) => {
+// SPA fallback (but ignore API routes)
+app.get(/^\/(?!api).*/, (req, res) => {
     res.sendFile(path.join(__dirname, "dist", "index.html"));
 });
 
