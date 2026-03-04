@@ -2,7 +2,7 @@ import axios from 'axios';
 
 // In dev, Vite proxies /api/saavn → saavn.sumit.co
 // In production, server.mjs proxies /api/saavn → saavn.sumit.co
-const SAAVN_API_BASE = '/api/saavn';
+const SAAVN_API_BASE = 'https://saavn.sumit.co';
 
 export const saavnApi = {
     // Search for songs

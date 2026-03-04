@@ -269,8 +269,10 @@ async function getStreamUrl(videoId) {
     const cached = streamCache.get(videoId);
     if (cached && cached.expiry > Date.now()) return cached.url;
 
+    // Use Android client spoofing to bypass AWS IP bot blocks
     const { stdout } = await execFileAsync("yt-dlp", [
         "-f", "bestaudio",
+        "--extractor-args", "youtube:player-client=android",
         "--get-url",
         `https://music.youtube.com/watch?v=${videoId}`,
     ], { timeout: 15000 });

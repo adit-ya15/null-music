@@ -7,7 +7,7 @@ import axios from 'axios';
 
 // In dev, Vite proxies /api/yt → localhost:3001
 // In production, Nginx routes /music/api/yt → server.mjs
-const YT_API_BASE = '/api/yt';
+const YT_API_BASE = 'https://music.devsyncapp.in/api/yt';
 
 export const youtubeApi = {
 
