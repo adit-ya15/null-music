@@ -7,7 +7,7 @@ import axios from 'axios';
 
 // Mobile app calls EC2 backend
 // In dev, Vite proxies /api/yt → localhost:3001
-const YT_API_BASE = 'https://music.devsynsapp.in/api/yt';
+const YT_API_BASE = 'https://music.devsyncapp.in/api/yt';
 
 export const youtubeApi = {
 
@@ -61,3 +61,4 @@ export const youtubeApi = {
         source: 'youtube'
     })
 };
+
