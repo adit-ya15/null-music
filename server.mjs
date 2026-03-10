@@ -362,6 +362,65 @@ app.get("/api/yt/pipe/:videoId", async (req, res) => {
 });
 
 // ─────────────────────────────────────────────
+// up-next / radio recommendations
+// ─────────────────────────────────────────────
+
+app.get("/api/yt/up-next/:videoId", async (req, res) => {
+    const { videoId } = req.params;
+    if (!videoId) return res.status(400).json({ results: [] });
+
+    try {
+        const innertube = await getYT();
+        const upNext = await innertube.music.getUpNext(videoId, true);
+        const items = upNext?.contents || [];
+        const results = [];
+
+        for (const item of items) {
+            try {
+                const id = item.video_id || item.id;
+                if (!id || id === videoId) continue;
+
+                results.push({
+                    id,
+                    title: item.title?.text || item.title || "Unknown",
+                    artist:
+                        item.artists
+                            ?.map((a) => a.name?.text || a.name || "")
+                            .join(", ") ||
+                        item.author?.text ||
+                        item.author ||
+                        "Unknown",
+                    artists:
+                        item.artists?.map((a) => ({
+                            name: a.name?.text || a.name,
+                            id: a.channel_id,
+                        })) || [],
+                    album:
+                        item.album?.name?.text ||
+                        item.album?.name ||
+                        item.album?.text ||
+                        "YouTube Music",
+                    duration: parseDuration(
+                        item.duration?.text || item.duration
+                    ),
+                    durationText:
+                        item.duration?.text || item.duration || "",
+                    thumbnail: item.thumbnails?.[0]?.url || "",
+                    thumbnails: item.thumbnails || [],
+                });
+            } catch {
+                // skip malformed items
+            }
+        }
+
+        res.json({ results: results.slice(0, 25) });
+    } catch (err) {
+        console.error("Up-next error:", err.message);
+        res.json({ results: [] });
+    }
+});
+
+// ─────────────────────────────────────────────
 // health
 // ─────────────────────────────────────────────
 
@@ -401,10 +460,7 @@ function parseDuration(text) {
 app.use(express.static(path.join(__dirname, "dist")));
 
 // SPA fallback (but ignore API routes)
-app.get('*', (req, res) => {
-    if (req.path.startsWith('/api')) {
-        return res.status(404).send('API route not found');
-    }
+app.get(/^(?!\/api).*/, (req, res) => {
     res.sendFile(path.join(__dirname, "dist", "index.html"));
 });
 

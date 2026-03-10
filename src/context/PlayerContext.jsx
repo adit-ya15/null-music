@@ -10,7 +10,6 @@ import React, {
 } from "react";
 
 import { registerPlugin } from "@capacitor/core";
-import { getColor } from "colorthief";
 
 import { youtubeApi } from "../api/youtube";
 import { saavnApi } from "../api/saavn";
@@ -27,6 +26,28 @@ import {
 const MusicPlayer = registerPlugin("MusicPlayer");
 
 const PlayerContext = createContext();
+
+/** Extract dominant color from an Image element using Canvas. */
+function getColor(img) {
+  const canvas = document.createElement("canvas");
+  const ctx = canvas.getContext("2d");
+  const w = Math.min(img.naturalWidth || img.width, 50);
+  const h = Math.min(img.naturalHeight || img.height, 50);
+  canvas.width = w;
+  canvas.height = h;
+  ctx.drawImage(img, 0, 0, w, h);
+  const { data } = ctx.getImageData(0, 0, w, h);
+  let r = 0, g = 0, b = 0, count = 0;
+  for (let i = 0; i < data.length; i += 16) {
+    if (data[i + 3] < 128) continue;
+    r += data[i];
+    g += data[i + 1];
+    b += data[i + 2];
+    count++;
+  }
+  if (count === 0) return [0, 0, 0];
+  return [Math.round(r / count), Math.round(g / count), Math.round(b / count)];
+}
 
 const FALLBACK_COVER =
   "https://placehold.co/500x500/27272a/71717a?text=%E2%99%AA";
@@ -52,9 +73,24 @@ export const PlayerProvider = ({ children }) => {
 
   const [autoRadioEnabled, setAutoRadioEnabled] = useState(true);
   const [sleepTimerMinutes, setSleepTimerMinutes] = useState(null);
+  const [volume, setVolumeState] = useState(0.8);
 
-  const radioHistoryRef = useRef(new Set());
   const sleepTimerRef = useRef(null);
+  const skipNextRef = useRef(null);
+  const skipPrevRef = useRef(null);
+  const playTrackRef = useRef(null);
+  const queueModeRef = useRef(queueMode);
+  const autoRadioEnabledRef = useRef(autoRadioEnabled);
+  const isLoadingRef = useRef(isLoading);
+
+  const playedIdsRef = useRef(new Set());
+  const isFetchingRecsRef = useRef(false);
+  const pendingRecsRef = useRef([]);
+  const currentTrackRef = useRef(null);
+  const repeatModeRef = useRef(repeatMode);
+  const loadAndPlayRef = useRef(null);
+  const queueRef = useRef(queue);
+  const queueIndexRef = useRef(queueIndex);
 
   /* -------------------------- PLAY TRACK -------------------------- */
 
@@ -119,9 +155,7 @@ export const PlayerProvider = ({ children }) => {
     setQueue(session.queue);
     setQueueIndex(session.queueIndex);
 
-    if (session.queueMode === "radio") {
-      radioHistoryRef.current = new Set([track.id]);
-    }
+    pendingRecsRef.current = [];
 
     loadAndPlay(track);
 
@@ -156,25 +190,51 @@ export const PlayerProvider = ({ children }) => {
     let nextIndex;
 
     if (shuffleMode) {
-
-      nextIndex = Math.floor(Math.random() * queue.length);
-
-    } else {
-
-      nextIndex = getNextListIndex({
-        queueIndex,
-        queueLength: queue.length,
-        repeatMode
-      });
-
+      if (queue.length <= 1) {
+        nextIndex = 0;
+      } else {
+        do {
+          nextIndex = Math.floor(Math.random() * queue.length);
+        } while (nextIndex === queueIndex && queue.length > 1);
+      }
+      setQueueIndex(nextIndex);
+      loadAndPlay(queue[nextIndex]);
+      return;
     }
 
-    if (nextIndex == null) return;
+    nextIndex = queueIndex + 1;
 
-    setQueueIndex(nextIndex);
-    loadAndPlay(queue[nextIndex]);
+    if (nextIndex < queue.length) {
+      setQueueIndex(nextIndex);
+      loadAndPlay(queue[nextIndex]);
+      return;
+    }
 
-  }, [queue, queueIndex, shuffleMode, repeatMode, loadAndPlay]);
+    // End of queue — autoplay with recommendations
+    if (autoRadioEnabledRef.current) {
+      try {
+        const recs = pendingRecsRef.current.length > 0
+          ? pendingRecsRef.current.splice(0)
+          : await fetchRecommendations(currentTrack);
+
+        if (recs.length > 0) {
+          const newQueue = [...queue, ...recs];
+          setQueue(newQueue);
+          setQueueIndex(queue.length);
+          loadAndPlay(recs[0]);
+          return;
+        }
+      } catch {}
+    }
+
+    // Repeat all wraps around
+    if (repeatMode === 'all' && queue.length > 0) {
+      setQueueIndex(0);
+      loadAndPlay(queue[0]);
+      return;
+    }
+
+  }, [queue, queueIndex, shuffleMode, repeatMode, loadAndPlay, currentTrack, fetchRecommendations]);
 
   /* -------------------------- PREVIOUS -------------------------- */
 
@@ -223,7 +283,121 @@ export const PlayerProvider = ({ children }) => {
 
   }, []);
 
-  /* -------------------------- AUTO RADIO -------------------------- */
+  /* -------------------------- VOLUME CONTROL -------------------------- */
+
+  const setVolume = useCallback(async (vol) => {
+    const normalizedVol = Math.max(0, Math.min(1, vol));
+    setVolumeState(normalizedVol);
+    // Future: add native volume control when available
+  }, []);
+
+  /* -------------------------- FETCH RECOMMENDATIONS (INFINITE AUTOPLAY) -------------------------- */
+
+  const fetchRecommendations = useCallback(async (seedTrack) => {
+    if (!seedTrack || isFetchingRecsRef.current) return [];
+    isFetchingRecsRef.current = true;
+
+    try {
+      const results = [];
+
+      // Strategy 1: YouTube Music "Up Next" (best quality recs)
+      const videoId = seedTrack.videoId || (seedTrack.source === 'youtube' ? seedTrack.id.replace(/^yt-/, '') : null);
+      if (videoId) {
+        try {
+          const upNext = await youtubeApi.getUpNextSafe(videoId);
+          if (upNext.ok) results.push(...upNext.data);
+        } catch {}
+      }
+
+      // Strategy 2: Saavn suggestions (if Saavn track)
+      if (seedTrack.source === 'saavn' && results.length < 5) {
+        try {
+          const suggestions = await saavnApi.getSongSuggestionsSafe(seedTrack.id);
+          if (suggestions.ok) results.push(...suggestions.data);
+        } catch {}
+      }
+
+      // Strategy 3: Search by artist name
+      if (results.length < 8 && seedTrack.artist) {
+        try {
+          const artistRes = await youtubeApi.searchSongsSafe(seedTrack.artist, 10);
+          if (artistRes.ok) results.push(...artistRes.data);
+        } catch {}
+      }
+
+      // Strategy 4: Search by title + artist keywords
+      if (results.length < 10) {
+        try {
+          const q = `${seedTrack.title} ${seedTrack.artist}`.trim();
+          const similarRes = await youtubeApi.searchSongsSafe(q, 8);
+          if (similarRes.ok) results.push(...similarRes.data);
+        } catch {}
+      }
+
+      // Deduplicate and filter out already played/queued tracks
+      const seen = new Set();
+      const currentQueue = queueRef.current;
+      const queueIds = new Set(currentQueue.map(t => t.id));
+
+      return results.filter(track => {
+        if (!track?.id) return false;
+        if (seen.has(track.id)) return false;
+        if (queueIds.has(track.id)) return false;
+        if (playedIdsRef.current.has(track.id)) return false;
+        seen.add(track.id);
+        return true;
+      }).slice(0, 20);
+    } catch (error) {
+      console.error('Recommendation fetch failed:', error);
+      return [];
+    } finally {
+      isFetchingRecsRef.current = false;
+    }
+  }, []);
+
+  /* -------------------------- RECOMMENDATIONS FOR DISCOVER -------------------------- */
+
+  const getRecommendationsFor = useCallback(async (seedTrack) => {
+    if (!seedTrack) return [];
+
+    try {
+      const results = [];
+
+      const videoId = seedTrack.videoId || (seedTrack.source === 'youtube' ? seedTrack.id.replace(/^yt-/, '') : null);
+      if (videoId) {
+        try {
+          const upNext = await youtubeApi.getUpNextSafe(videoId);
+          if (upNext.ok) results.push(...upNext.data);
+        } catch {}
+      }
+
+      if (seedTrack.source === 'saavn') {
+        try {
+          const suggestions = await saavnApi.getSongSuggestionsSafe(seedTrack.id);
+          if (suggestions.ok) results.push(...suggestions.data);
+        } catch {}
+      }
+
+      if (results.length < 5 && seedTrack.artist) {
+        try {
+          const artistRes = await youtubeApi.searchSongsSafe(seedTrack.artist, 8);
+          if (artistRes.ok) results.push(...artistRes.data);
+        } catch {}
+      }
+
+      // Deduplicate
+      const seen = new Set();
+      return results.filter(track => {
+        if (!track?.id || seen.has(track.id) || track.id === seedTrack.id) return false;
+        seen.add(track.id);
+        return true;
+      }).slice(0, 15);
+    } catch {
+      return [];
+    }
+  }, []);
+
+  /* -------------------------- AUTO RADIO TOGGLE -------------------------- */
 
   const toggleAutoRadio = useCallback(() => {
 
@@ -231,7 +405,70 @@ export const PlayerProvider = ({ children }) => {
 
   }, []);
 
-  /* -------------------------- SLEEP TIMER -------------------------- */
+  /* ----------- KEEP REFS IN SYNC FOR NATIVE LISTENERS ----------- */
+
+  useEffect(() => { skipNextRef.current = skipNext; }, [skipNext]);
+  useEffect(() => { skipPrevRef.current = skipPrev; }, [skipPrev]);
+  useEffect(() => { playTrackRef.current = playTrack; }, [playTrack]);
+  useEffect(() => { queueModeRef.current = queueMode; }, [queueMode]);
+  useEffect(() => { autoRadioEnabledRef.current = autoRadioEnabled; }, [autoRadioEnabled]);
+  useEffect(() => { isLoadingRef.current = isLoading; }, [isLoading]);
+  useEffect(() => { currentTrackRef.current = currentTrack; }, [currentTrack]);
+  useEffect(() => { repeatModeRef.current = repeatMode; }, [repeatMode]);
+  useEffect(() => { loadAndPlayRef.current = loadAndPlay; }, [loadAndPlay]);
+  useEffect(() => { queueRef.current = queue; }, [queue]);
+  useEffect(() => { queueIndexRef.current = queueIndex; }, [queueIndex]);
+
+  /* Track played IDs to avoid recommending already-heard songs */
+  useEffect(() => {
+    if (currentTrack?.id) {
+      playedIdsRef.current.add(currentTrack.id);
+      if (playedIdsRef.current.size > 200) {
+        const arr = [...playedIdsRef.current];
+        playedIdsRef.current = new Set(arr.slice(-100));
+      }
+    }
+  }, [currentTrack]);
+
+  /* -------------------------- QUEUE MANAGEMENT -------------------------- */
+
+  const removeFromQueue = useCallback((index) => {
+    if (index < 0 || index >= queue.length) return;
+    const newQueue = queue.filter((_, i) => i !== index);
+    let newIndex = queueIndex;
+    if (index < queueIndex) {
+      newIndex = queueIndex - 1;
+    } else if (index === queueIndex) {
+      // Removing current track — play next or stop
+      if (newQueue.length === 0) {
+        setQueue([]);
+        setQueueIndex(-1);
+        return;
+      }
+      newIndex = Math.min(queueIndex, newQueue.length - 1);
+      setQueue(newQueue);
+      setQueueIndex(newIndex);
+      loadAndPlay(newQueue[newIndex]);
+      return;
+    }
+    setQueue(newQueue);
+    setQueueIndex(newIndex);
+  }, [queue, queueIndex, loadAndPlay]);
+
+  const clearQueue = useCallback(() => {
+    const current = queueIndex >= 0 && queueIndex < queue.length ? queue[queueIndex] : null;
+    if (current) {
+      setQueue([current]);
+      setQueueIndex(0);
+    } else {
+      setQueue([]);
+      setQueueIndex(-1);
+    }
+  }, [queue, queueIndex]);
+
+  /* -------------------------- SLEEP TIMER WITH FADE -------------------------- */
+
+  const fadeIntervalRef = useRef(null);
 
   const cycleSleepTimer = useCallback(() => {
 
@@ -239,19 +476,25 @@ export const PlayerProvider = ({ children }) => {
 
       const next = cycleSleepTimerValue(prev);
 
-      if (sleepTimerRef.current) {
-        clearTimeout(sleepTimerRef.current);
-      }
+      if (sleepTimerRef.current) clearTimeout(sleepTimerRef.current);
+      if (fadeIntervalRef.current) clearInterval(fadeIntervalRef.current);
 
       if (next != null) {
+        const fadeStart = Math.max(0, next * 60 * 1000 - 30000);
 
-        sleepTimerRef.current = setTimeout(async () => {
-
-          await MusicPlayer.pause();
-          setIsPlaying(false);
-
-        }, next * 60 * 1000);
-
+        sleepTimerRef.current = setTimeout(() => {
+          // Start 30s volume fade-out
+          let fadeVol = 0.8;
+          fadeIntervalRef.current = setInterval(async () => {
+            fadeVol -= 0.04;
+            if (fadeVol <= 0) {
+              clearInterval(fadeIntervalRef.current);
+              await MusicPlayer.pause();
+              setIsPlaying(false);
+              setSleepTimerMinutes(null);
+            }
+          }, 1500);
+        }, fadeStart);
       }
 
       return next;
@@ -272,11 +515,11 @@ export const PlayerProvider = ({ children }) => {
     const img = new Image();
     img.crossOrigin = "Anonymous";
 
-    img.onload = async () => {
+    img.onload = () => {
 
       try {
 
-        const color = await getColor(img);
+        const color = getColor(img);
 
         if (Array.isArray(color)) {
           setDominantColor(`rgb(${color[0]},${color[1]},${color[2]})`);
@@ -325,35 +568,55 @@ export const PlayerProvider = ({ children }) => {
 
   }, []);
 
-  /* -------------------------- LOCK SCREEN CONTROLS -------------------------- */
+  /* -------------------------- LOCK SCREEN CONTROLS & AUTOPLAY -------------------------- */
 
   useEffect(() => {
-    // Listen for 'nextTrack' event from Android Lockscreen or when a song ends
     const nextListener = MusicPlayer.addListener('nextTrack', () => {
-      skipNext();
+      const repeat = repeatModeRef.current;
+
+      // Natural track end with repeat-one: replay
+      if (repeat === 'one') {
+        const track = currentTrackRef.current;
+        if (track) loadAndPlayRef.current?.(track);
+        return;
+      }
+
+      // All other cases: skipNext handles autoplay, shuffle, repeat-all
+      skipNextRef.current?.();
     });
 
-    // Listen for 'prevTrack' event from Android Lockscreen
     const prevListener = MusicPlayer.addListener('prevTrack', () => {
-      skipPrev();
+      skipPrevRef.current?.();
     });
 
-    // Listen for progress updates from the native player
     const statusListener = MusicPlayer.addListener('statusUpdate', (data) => {
-      if (data.position != null) {
-        setProgress(data.position);
-      }
-      if (data.duration != null) {
-        setDuration(data.duration);
-      }
+      if (data.position != null) setProgress(data.position);
+      if (data.duration != null) setDuration(data.duration);
     });
 
     return () => {
-      nextListener.remove();
-      prevListener.remove();
-      statusListener.remove();
+      if (nextListener?.remove) nextListener.remove();
+      if (prevListener?.remove) prevListener.remove();
+      if (statusListener?.remove) statusListener.remove();
     };
-  }, [skipNext, skipPrev]);
+  }, []);
+
+  /* -------------------------- PRE-FETCH RECOMMENDATIONS -------------------------- */
+
+  useEffect(() => {
+    if (!autoRadioEnabled || queue.length === 0) return;
+
+    const remaining = queue.length - 1 - queueIndex;
+
+    if (remaining <= 2 && !isFetchingRecsRef.current && pendingRecsRef.current.length === 0) {
+      const seed = queue[queue.length - 1] || currentTrack;
+      if (seed) {
+        fetchRecommendations(seed).then(recs => {
+          if (recs.length > 0) pendingRecsRef.current = recs;
+        }).catch(() => {});
+      }
+    }
+  }, [queueIndex, queue, autoRadioEnabled, currentTrack, fetchRecommendations]);
 
   /* -------------------------- CONTEXT VALUE -------------------------- */
 
@@ -363,6 +626,7 @@ export const PlayerProvider = ({ children }) => {
     isPlaying,
     progress,
     duration,
+    volume,
 
     queue,
     queueIndex,
@@ -382,13 +646,17 @@ export const PlayerProvider = ({ children }) => {
     skipNext,
     skipPrev,
     seekTo,
+    setVolume,
 
     toggleShuffle,
     cycleRepeat,
     toggleAutoRadio,
+    getRecommendationsFor,
 
     cycleSleepTimer,
-    setQueue
+    setQueue,
+    removeFromQueue,
+    clearQueue
 
   };
 

@@ -37,6 +37,7 @@ public class MusicService extends Service {
     private MediaSessionCompat mediaSession;
     private String currentTitle = "Aura Music";
     private String currentArtist = "Unknown Artist";
+    private String currentArtwork = "";
     private final Handler handler = new Handler();
     private final Runnable statusRunnable = new Runnable() {
         @Override
@@ -46,11 +47,22 @@ public class MusicService extends Service {
                 intent.putExtra("position", (double) player.getCurrentPosition() / 1000.0);
                 long duration = player.getDuration();
                 intent.putExtra("duration", duration > 0 ? (double) duration / 1000.0 : 0.0);
-                sendBroadcast(intent);
+                sendExplicitBroadcast(intent);
             }
             handler.postDelayed(this, 1000);
         }
     };
+
+    private void sendExplicitBroadcast(Intent intent) {
+        intent.setPackage(getPackageName());
+        sendBroadcast(intent);
+    }
+
+    private void sendExplicitBroadcast(String action) {
+        Intent intent = new Intent(action);
+        intent.setPackage(getPackageName());
+        sendBroadcast(intent);
+    }
 
     @Override
     public void onCreate() {
@@ -67,7 +79,7 @@ public class MusicService extends Service {
             @Override
             public void onPlaybackStateChanged(int state) {
                 if (state == Player.STATE_ENDED) {
-                    sendBroadcast(new Intent("com.aura.music.TRACK_ENDED"));
+                    sendExplicitBroadcast("com.aura.music.TRACK_ENDED");
                 }
             }
         });
@@ -75,13 +87,21 @@ public class MusicService extends Service {
         mediaSession = new MediaSessionCompat(this, "AuraMusicSession");
         mediaSession.setCallback(new MediaSessionCompat.Callback() {
             @Override
-            public void onPlay() { player.play(); }
+            public void onPlay() {
+                player.play();
+                updateNotification();
+                updatePlaybackState();
+            }
             @Override
-            public void onPause() { player.pause(); }
+            public void onPause() {
+                player.pause();
+                updateNotification();
+                updatePlaybackState();
+            }
             @Override
-            public void onSkipToNext() { sendBroadcast(new Intent("com.aura.music.SKIP_NEXT")); }
+            public void onSkipToNext() { sendExplicitBroadcast("com.aura.music.SKIP_NEXT"); }
             @Override
-            public void onSkipToPrevious() { sendBroadcast(new Intent("com.aura.music.SKIP_PREV")); }
+            public void onSkipToPrevious() { sendExplicitBroadcast("com.aura.music.SKIP_PREV"); }
             @Override
             public void onSeekTo(long pos) { player.seekTo(pos); }
         });
@@ -93,10 +113,12 @@ public class MusicService extends Service {
     public int onStartCommand(Intent intent, int flags, int startId) {
         if (intent != null && intent.getAction() != null) {
             String action = intent.getAction();
+            android.util.Log.d("MusicService", "Action received: " + action);
             switch (action) {
                 case ACTION_PLAY:
                     currentTitle = intent.getStringExtra("title");
                     currentArtist = intent.getStringExtra("artist");
+                    currentArtwork = intent.getStringExtra("artwork") != null ? intent.getStringExtra("artwork") : "";
                     playTrack(intent.getStringExtra("url"));
                     break;
                 case ACTION_PAUSE:
@@ -106,10 +128,12 @@ public class MusicService extends Service {
                     player.play();
                     break;
                 case ACTION_NEXT:
-                    sendBroadcast(new Intent("com.aura.music.SKIP_NEXT"));
+                    android.util.Log.d("MusicService", "ACTION_NEXT triggered");
+                    sendExplicitBroadcast("com.aura.music.SKIP_NEXT");
                     break;
                 case ACTION_PREV:
-                    sendBroadcast(new Intent("com.aura.music.SKIP_PREV"));
+                    android.util.Log.d("MusicService", "ACTION_PREV triggered");
+                    sendExplicitBroadcast("com.aura.music.SKIP_PREV");
                     break;
                 case ACTION_SEEK:
                     player.seekTo(intent.getLongExtra("position", 0));
@@ -137,7 +161,7 @@ public class MusicService extends Service {
 
     private Notification createNotification() {
         Intent notifyIntent = new Intent(this, MainActivity.class);
-        PendingIntent pi = PendingIntent.getActivity(this, 0, notifyIntent, PendingIntent.FLAG_IMMUTABLE);
+        PendingIntent pi = PendingIntent.getActivity(this, 0, notifyIntent, PendingIntent.FLAG_IMMUTABLE | PendingIntent.FLAG_UPDATE_CURRENT);
 
         boolean isPlaying = player.getPlayWhenReady();
         
@@ -169,7 +193,16 @@ public class MusicService extends Service {
 
     private PendingIntent getServiceIntent(String action) {
         Intent intent = new Intent(this, MusicService.class).setAction(action);
-        return PendingIntent.getService(this, 0, intent, PendingIntent.FLAG_IMMUTABLE);
+        int requestCode;
+        switch(action) {
+            case ACTION_PREV: requestCode = 1; break;
+            case ACTION_RESUME:
+            case ACTION_PAUSE: requestCode = 2; break;
+            case ACTION_NEXT: requestCode = 3; break;
+            case ACTION_SEEK: requestCode = 4; break;
+            default: requestCode = 0; break;
+        }
+        return PendingIntent.getService(this, requestCode, intent, PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);
     }
 
     public void playTrack(String url) {
@@ -177,6 +210,7 @@ public class MusicService extends Service {
         player.setMediaItem(item);
         player.prepare();
         player.play();
+        updateNotification();
     }
 
     @Override

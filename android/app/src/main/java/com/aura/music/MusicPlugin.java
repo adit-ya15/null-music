@@ -23,19 +23,19 @@ public class MusicPlugin extends Plugin {
             public void onReceive(Context context, Intent intent) {
                 String action = intent.getAction();
                 if (action == null) return;
+                
+                android.util.Log.d("MusicPlugin", "Broadcast received: " + action);
 
                 JSObject ret = new JSObject();
                 if (action.equals("com.aura.music.SKIP_NEXT") || action.equals("com.aura.music.TRACK_ENDED")) {
+                    android.util.Log.d("MusicPlugin", "Notifying nextTrack");
                     notifyListeners("nextTrack", ret);
                 } else if (action.equals("com.aura.music.SKIP_PREV")) {
+                    android.util.Log.d("MusicPlugin", "Notifying prevTrack");
                     notifyListeners("prevTrack", ret);
                 } else if (action.equals("com.aura.music.STATUS_UPDATE")) {
                     ret.put("position", intent.getDoubleExtra("position", 0));
                     ret.put("duration", intent.getDoubleExtra("duration", 0));
-                    notifyListeners("statusUpdate", ret);
-                } else if (action.equals("com.aura.music.STATUS_UPDATE")) {
-                    ret.put("position", intent.getLongExtra("position", 0));
-                    ret.put("duration", intent.getLongExtra("duration", 0));
                     notifyListeners("statusUpdate", ret);
                 }
             }
@@ -45,7 +45,6 @@ public class MusicPlugin extends Plugin {
         filter.addAction("com.aura.music.SKIP_NEXT");
         filter.addAction("com.aura.music.SKIP_PREV");
         filter.addAction("com.aura.music.TRACK_ENDED");
-        filter.addAction("com.aura.music.STATUS_UPDATE");
         filter.addAction("com.aura.music.STATUS_UPDATE");
         
         if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
@@ -60,12 +59,14 @@ public class MusicPlugin extends Plugin {
         String url = call.getString("url");
         String title = call.getString("title", "Aura Music");
         String artist = call.getString("artist", "Unknown Artist");
+        String artwork = call.getString("artwork", "");
 
         Intent intent = new Intent(getContext(), MusicService.class);
         intent.setAction(MusicService.ACTION_PLAY);
         intent.putExtra("url", url);
         intent.putExtra("title", title);
         intent.putExtra("artist", artist);
+        intent.putExtra("artwork", artwork);
 
         if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
             getContext().startForegroundService(intent);

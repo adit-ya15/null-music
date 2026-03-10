@@ -72,6 +72,26 @@ export const youtubeApi = {
     return result.data;
   },
 
+  getUpNextSafe: async (videoId) => {
+    const result = await requestYoutube(
+      'youtube.getUpNext',
+      `/up-next/${videoId}`,
+      { timeout: 10000 },
+      'Up next is unavailable right now.'
+    );
+
+    if (!result.ok) {
+      return { ok: false, data: [], error: result.error };
+    }
+
+    const results = result.response?.data?.results || [];
+    return {
+      ok: true,
+      data: results.map(youtubeApi.formatTrack),
+      error: null,
+    };
+  },
+
   formatTrack: (ytSong) => ({
     id: `yt-${ytSong.id}`,
     videoId: ytSong.id,

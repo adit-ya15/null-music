@@ -1,4 +1,4 @@
-import { Heart } from 'lucide-react';
+import { Heart, Play, Pause } from 'lucide-react';
 import { usePlayer } from '../context/PlayerContext';
 
 const FALLBACK_COVER = 'https://placehold.co/300x300/27272a/71717a?text=%E2%99%AA';
@@ -38,7 +38,7 @@ export default function TrackCard({
 
   return (
     <div
-      className={`track-card glass-panel ${isActive ? 'track-card--active' : ''}`}
+      className={`track-card ${isActive ? 'track-card--active' : ''}`}
       onClick={handlePlay}
       onContextMenu={(e) => {
         e.preventDefault();
@@ -62,28 +62,31 @@ export default function TrackCard({
       }}
       style={typeof index === 'number' ? { animationDelay: `${Math.min(index * 30, 240)}ms` } : undefined}
     >
-      <div
-        className="cover-art"
-        style={{
-          backgroundImage: `url(${coverArt})`,
-          backgroundSize: 'cover',
-          backgroundPosition: 'center',
-          position: 'relative',
-        }}
-      >
-        <span className={`source-badge ${track.source === 'youtube' ? 'badge-yt' : 'badge-sv'}`}>
-          {track.source === 'youtube' ? 'YT' : 'SV'}
-        </span>
+      <div className="cover-art-wrapper">
+        <div
+          className="cover-art"
+          style={{
+            backgroundImage: `url(${coverArt})`,
+            backgroundSize: 'cover',
+            backgroundPosition: 'center',
+          }}
+        >
+          <span className={`source-badge ${track.source === 'youtube' ? 'badge-yt' : 'badge-sv'}`}>
+            {track.source === 'youtube' ? 'YT' : 'SV'}
+          </span>
 
-        {isActive && isPlaying && (
-          <div className="playing-overlay">
-            <div className="eq-bar">
-              <span />
-              <span />
-              <span />
-            </div>
+          <div className={`cover-play-overlay ${isActive && isPlaying ? 'cover-play-visible' : ''}`}>
+            {isActive && isPlaying ? (
+              <div className="eq-bar">
+                <span /><span /><span /><span />
+              </div>
+            ) : (
+              <div className="cover-play-circle">
+                <Play fill="white" size={20} style={{ marginLeft: 2 }} />
+              </div>
+            )}
           </div>
-        )}
+        </div>
       </div>
 
       <div className="track-info">
@@ -105,7 +108,7 @@ export default function TrackCard({
           aria-pressed={isFavorite}
           type="button"
         >
-          <Heart size={18} fill={isFavorite ? 'currentColor' : 'none'} />
+          <Heart size={16} fill={isFavorite ? 'currentColor' : 'none'} />
         </button>
       </div>
     </div>

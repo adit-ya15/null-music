@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
-import { Play, User } from 'lucide-react';
+import { Play, User, Shuffle, ListPlus } from 'lucide-react';
 import { usePlayer } from './context/PlayerContext';
 import { saavnApi } from './api/saavn';
 import { youtubeApi } from './api/youtube';
@@ -338,6 +338,7 @@ function App() {
 
   const closeContextMenu = useCallback(() => {
     setContextMenu((previous) => ({ ...previous, open: false, track: null }));
+    setPlaylistSubOpen(false);
   }, []);
 
   const handlePlayNextFromMenu = useCallback(() => {
@@ -367,6 +368,35 @@ function App() {
     toggleFavorite(track);
     closeContextMenu();
   }, [closeContextMenu, contextMenu.track, toggleFavorite]);
+
+  const [playlistSubOpen, setPlaylistSubOpen] = useState(false);
+
+  const handleAddToPlaylist = useCallback((playlistId) => {
+    const track = contextMenu.track;
+    if (!track) return;
+    setPlaylists((prev) =>
+      prev.map((pl) =>
+        pl.id === playlistId && !pl.tracks.some((t) => t.id === track.id)
+          ? { ...pl, tracks: [...pl.tracks, track] }
+          : pl
+      )
+    );
+    setPlaylistSubOpen(false);
+    closeContextMenu();
+  }, [closeContextMenu, contextMenu.track, setPlaylists]);
+
+  const handlePlayAll = useCallback(() => {
+    if (renderedTracks.length > 0) {
+      playTrack(renderedTracks[0], renderedTracks);
+    }
+  }, [renderedTracks, playTrack]);
+
+  const handleShuffleAll = useCallback(() => {
+    if (renderedTracks.length > 0) {
+      const shuffled = [...renderedTracks].sort(() => Math.random() - 0.5);
+      playTrack(shuffled[0], shuffled);
+    }
+  }, [renderedTracks, playTrack]);
 
   const contextMenuActions = [handlePlayNextFromMenu, handleStartRadioFromMenu, handleToggleFavoriteFromMenu];
 
@@ -448,7 +478,7 @@ function App() {
                           key={track.id + index}
                           track={track}
                           trackList={dailyMix.tracks}
-                          playMode="radio"
+                          playMode="list"
                           isFavorite={favorites.some((favoriteTrack) => favoriteTrack.id === track.id)}
                           onToggleFavorite={toggleFavorite}
                           onContextMenu={handleTrackContextMenu}
@@ -470,7 +500,7 @@ function App() {
                           key={track.id + index}
                           track={track}
                           trackList={personalMix.tracks}
-                          playMode="radio"
+                          playMode="list"
                           isFavorite={favorites.some((favoriteTrack) => favoriteTrack.id === track.id)}
                           onToggleFavorite={toggleFavorite}
                           onContextMenu={handleTrackContextMenu}
@@ -547,9 +577,21 @@ function App() {
               <section className="track-section">
                 <div className="section-header">
                   <h2>{sectionTitle}</h2>
-                  {playlistMatch && playlists.find((playlist) => playlist.id === playlistMatch[1]) && (
-                    <span className="track-count">{displayedTracks.length} tracks</span>
-                  )}
+                  <div className="section-header-actions">
+                    {renderedTracks.length > 1 && (
+                      <>
+                        <button className="section-action-btn" onClick={handlePlayAll} aria-label="Play all" type="button">
+                          <Play size={16} /> Play All
+                        </button>
+                        <button className="section-action-btn" onClick={handleShuffleAll} aria-label="Shuffle all" type="button">
+                          <Shuffle size={16} /> Shuffle
+                        </button>
+                      </>
+                    )}
+                    {playlistMatch && playlists.find((playlist) => playlist.id === playlistMatch[1]) && (
+                      <span className="track-count">{displayedTracks.length} tracks</span>
+                    )}
+                  </div>
                 </div>
 
                 {activeTab === 'history' && history.length > 0 && (
@@ -623,7 +665,7 @@ function App() {
                         key={track.id + index}
                         track={track}
                         trackList={renderedTracks}
-                        playMode={activeTab === 'search' ? 'radio' : 'list'}
+                        playMode="list"
                         isFavorite={favorites.some((favoriteTrack) => favoriteTrack.id === track.id)}
                         onToggleFavorite={toggleFavorite}
                         onContextMenu={handleTrackContextMenu}
@@ -712,6 +754,35 @@ function App() {
                 ? 'Remove from favorites'
                 : 'Add to favorites'}
             </button>
+            {playlists.length > 0 && (
+              <div className="ctx-playlist-group">
+                <button
+                  className="track-context-item ctx-playlist-toggle"
+                  onClick={() => setPlaylistSubOpen((p) => !p)}
+                  role="menuitem"
+                  type="button"
+                >
+                  <ListPlus size={16} />
+                  Add to playlist
+                </button>
+                {playlistSubOpen && (
+                  <div className="ctx-playlist-sub">
+                    {playlists.map((pl) => (
+                      <button
+                        key={pl.id}
+                        className="track-context-item ctx-playlist-item"
+                        onClick={() => handleAddToPlaylist(pl.id)}
+                        role="menuitem"
+                        type="button"
+                      >
+                        <span className="ctx-playlist-dot" style={{ background: pl.color }} />
+                        {pl.name}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
           </div>
         </div>
       )}

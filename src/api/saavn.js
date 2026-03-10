@@ -175,4 +175,23 @@ export const saavnApi = {
     const result = await saavnApi.getLyricsSafe(trackId);
     return result.data;
   },
+
+  getSongSuggestionsSafe: async (songId) => {
+    const result = await requestSaavn(
+      'saavn.getSongSuggestions',
+      `/songs/${songId}/suggestions`,
+      { params: { limit: 15 }, timeout: 8000 },
+      'Song suggestions are unavailable.'
+    );
+
+    if (!result.ok) {
+      return { ok: false, data: [], error: result.error };
+    }
+
+    return {
+      ok: true,
+      data: (result.response?.data?.data || []).map(saavnApi.formatTrack),
+      error: null,
+    };
+  },
 };

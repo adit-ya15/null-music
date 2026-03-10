@@ -5,12 +5,15 @@ import {
   SkipForward,
   SkipBack,
   Volume2,
+  Volume1,
   VolumeX,
   Shuffle,
   Repeat,
   Repeat1,
   Infinity as InfinityIcon,
   MoonStar,
+  ListMusic,
+  FileText,
 } from 'lucide-react';
 
 const FALLBACK_COVER = 'https://placehold.co/300x300/27272a/71717a?text=%E2%99%AA';
@@ -27,6 +30,7 @@ export default function PlaybackBar({ onOpenLyrics, onOpenQueue }) {
     repeatMode,
     autoRadioEnabled,
     sleepTimerMinutes,
+    dominantColor,
     togglePlay,
     setVolume,
     seekTo,
@@ -59,33 +63,84 @@ export default function PlaybackBar({ onOpenLyrics, onOpenQueue }) {
   };
 
   const RepeatIcon = repeatMode === 'one' ? Repeat1 : Repeat;
+  const VolumeIcon = volume === 0 ? VolumeX : volume < 0.5 ? Volume1 : Volume2;
+  const progressPct = duration ? (progress / duration) * 100 : 0;
+  const glowColor = dominantColor?.replace('rgb', 'rgba').replace(')', ', 0.12)') || 'transparent';
 
   return (
-    <footer className="playback-bar glass-panel" aria-label="Playback controls">
-      <div className="now-playing">
+    <footer className="playback-bar" style={{ '--bar-glow': glowColor }} aria-label="Playback controls">
+      {/* ── Now Playing ── */}
+      <div className="pb-now">
         {currentTrack ? (
           <>
             <div
-              className="playing-cover"
+              className="pb-cover"
               style={{
                 backgroundImage: `url(${currentTrack.coverArt || FALLBACK_COVER})`,
               }}
             />
-            <div className="playing-info">
-              <h4 className="playing-title">{currentTrack.title}</h4>
-              <p className="playing-artist">{currentTrack.artist}</p>
+            <div className="pb-track-info">
+              <h4 className="pb-title">{currentTrack.title}</h4>
+              <p className="pb-artist">{currentTrack.artist}</p>
             </div>
           </>
         ) : (
-          <div className="playing-skeleton">Select a track to start listening</div>
+          <div className="pb-empty">Select a track to play</div>
         )}
       </div>
 
-      <div className="player-controls">
-        <div className="progress-container">
-          <span className="time current">{formatTime(progress)}</span>
+      {/* ── Center: Controls + Progress ── */}
+      <div className="pb-center">
+        <div className="pb-buttons">
+          <button
+            className={`pb-btn icon-btn ${shuffleMode ? 'control-active' : ''}`}
+            onClick={toggleShuffle}
+            title="Shuffle"
+            aria-label="Toggle shuffle"
+            type="button"
+          >
+            <Shuffle size={16} />
+          </button>
+
+          <button className="pb-btn icon-btn" onClick={skipPrev} title="Previous" aria-label="Previous track" type="button">
+            <SkipBack size={18} fill="currentColor" />
+          </button>
+
+          <button
+            className="pb-play-btn"
+            onClick={togglePlay}
+            disabled={!currentTrack}
+            aria-label={isPlaying ? 'Pause' : 'Play'}
+            type="button"
+          >
+            {isLoading ? (
+              <div className="spinner" />
+            ) : isPlaying ? (
+              <Pause size={18} fill="currentColor" />
+            ) : (
+              <Play size={18} fill="currentColor" style={{ marginLeft: 2 }} />
+            )}
+          </button>
+
+          <button className="pb-btn icon-btn" onClick={skipNext} title="Next" aria-label="Next track" type="button">
+            <SkipForward size={18} fill="currentColor" />
+          </button>
+
+          <button
+            className={`pb-btn icon-btn ${repeatMode !== 'off' ? 'control-active' : ''}`}
+            onClick={cycleRepeat}
+            title={`Repeat: ${repeatMode}`}
+            aria-label={`Repeat mode ${repeatMode}`}
+            type="button"
+          >
+            <RepeatIcon size={16} />
+          </button>
+        </div>
+
+        <div className="pb-progress">
+          <span className="pb-time">{formatTime(progress)}</span>
           <div
-            className="progress-bar-bg"
+            className="pb-progress-bar"
             onClick={handleProgressClick}
             role="slider"
             tabIndex={0}
@@ -95,90 +150,37 @@ export default function PlaybackBar({ onOpenLyrics, onOpenQueue }) {
             aria-valuenow={Math.min(progress || 0, duration || 0)}
             onKeyDown={(e) => {
               if (!duration) return;
-              if (e.key === 'ArrowRight') {
-                e.preventDefault();
-                seekTo(Math.min(duration, (progress || 0) + 5));
-              } else if (e.key === 'ArrowLeft') {
-                e.preventDefault();
-                seekTo(Math.max(0, (progress || 0) - 5));
-              }
+              if (e.key === 'ArrowRight') { e.preventDefault(); seekTo(Math.min(duration, (progress || 0) + 5)); }
+              else if (e.key === 'ArrowLeft') { e.preventDefault(); seekTo(Math.max(0, (progress || 0) - 5)); }
             }}
           >
-            <div className="progress-bar-fill" style={{ width: `${duration ? (progress / duration) * 100 : 0}%` }}>
-              <div className="progress-thumb" />
+            <div className="pb-progress-fill" style={{ width: `${progressPct}%` }}>
+              <div className="pb-progress-thumb" />
             </div>
           </div>
-          <span className="time total">{formatTime(duration || currentTrack?.duration || 0)}</span>
-        </div>
-
-        <div className="control-buttons">
-          <button
-            className={`control-btn icon-btn ${shuffleMode ? 'control-active' : ''}`}
-            onClick={toggleShuffle}
-            title="Shuffle"
-            aria-label="Toggle shuffle"
-            type="button"
-          >
-            <Shuffle size={16} />
-          </button>
-
-          <button className="control-btn icon-btn" onClick={skipPrev} title="Previous" aria-label="Previous track" type="button">
-            <SkipBack size={20} fill="currentColor" />
-          </button>
-
-          <button
-            className="control-btn play-pause-btn"
-            onClick={togglePlay}
-            disabled={!currentTrack}
-            aria-label={isPlaying ? 'Pause' : 'Play'}
-            type="button"
-          >
-            {isLoading ? (
-              <div className="spinner" />
-            ) : isPlaying ? (
-              <Pause size={20} fill="black" />
-            ) : (
-              <Play size={20} fill="black" style={{ marginLeft: 2 }} />
-            )}
-          </button>
-
-          <button className="control-btn icon-btn" onClick={skipNext} title="Next" aria-label="Next track" type="button">
-            <SkipForward size={20} fill="currentColor" />
-          </button>
-
-          <button
-            className={`control-btn icon-btn ${repeatMode !== 'off' ? 'control-active' : ''}`}
-            onClick={cycleRepeat}
-            title={`Repeat: ${repeatMode}`}
-            aria-label={`Repeat mode ${repeatMode}`}
-            type="button"
-          >
-            <RepeatIcon size={16} />
-          </button>
+          <span className="pb-time">{formatTime(duration || currentTrack?.duration || 0)}</span>
         </div>
       </div>
 
-      <div className="extra-controls">
+      {/* ── Right: Extra Controls ── */}
+      <div className="pb-extra">
+        <button
+          className={`icon-btn ${autoRadioEnabled ? 'control-active' : ''}`}
+          onClick={toggleAutoRadio}
+          title="Autoplay similar"
+          aria-label="Toggle autoplay"
+          type="button"
+        >
+          <InfinityIcon size={18} />
+        </button>
         <button
           className={`icon-btn ${sleepTimerMinutes ? 'control-active' : ''}`}
           onClick={cycleSleepTimer}
-          title={`Sleep timer: ${sleepTimerMinutes ? `${sleepTimerMinutes} min` : 'Off'}`}
+          title={`Sleep: ${sleepTimerMinutes ? `${sleepTimerMinutes}m` : 'Off'}`}
           aria-label={`Sleep timer ${sleepTimerMinutes ? `${sleepTimerMinutes} minutes` : 'off'}`}
           type="button"
         >
           <MoonStar size={18} />
-        </button>
-        <button
-          className={`icon-btn ${autoRadioEnabled ? 'control-active' : ''}`}
-          onClick={toggleAutoRadio}
-          title="Autoplay similar songs"
-          aria-label="Toggle autoplay similar songs"
-          type="button"
-        >
-          <InfinityIcon size={20} />
-        </button>
-        <button className="icon-btn" onClick={onOpenQueue} title="Up Next Queue" aria-label="Open queue" type="button">
-          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="8" y1="6" x2="21" y2="6"></line><line x1="8" y1="12" x2="21" y2="12"></line><line x1="8" y1="18" x2="21" y2="18"></line><line x1="3" y1="6" x2="3.01" y2="6"></line><line x1="3" y1="12" x2="3.01" y2="12"></line><line x1="3" y1="18" x2="3.01" y2="18"></line></svg>
         </button>
         <button
           className="icon-btn"
@@ -186,35 +188,36 @@ export default function PlaybackBar({ onOpenLyrics, onOpenQueue }) {
           title="Lyrics"
           disabled={!currentTrack || currentTrack.source !== 'saavn' || !currentTrack.hasLyrics}
           style={{ opacity: !currentTrack || currentTrack.source !== 'saavn' || !currentTrack.hasLyrics ? 0.3 : 1 }}
-          aria-label="Open lyrics"
+          aria-label="Lyrics"
           type="button"
         >
-          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 18c-4.41 0-8-3.59-8-8s3.59-8 8-8 8 3.59 8 8-3.59 8-8 8zm-2-5.5V9.5l5 2.5-5 2.5z" /></svg>
+          <FileText size={18} />
         </button>
-        <button className="icon-btn" onClick={() => setVolume(volume > 0 ? 0 : 0.8)} aria-label={volume === 0 ? 'Unmute' : 'Mute'} type="button">
-          {volume === 0 ? <VolumeX size={20} /> : <Volume2 size={20} />}
+        <button className="icon-btn" onClick={onOpenQueue} title="Queue" aria-label="Queue" type="button">
+          <ListMusic size={18} />
         </button>
-        <div
-          className="volume-bar-bg"
-          onClick={handleVolumeClick}
-          role="slider"
-          tabIndex={0}
-          aria-label="Volume"
-          aria-valuemin={0}
-          aria-valuemax={100}
-          aria-valuenow={Math.round(volume * 100)}
-          onKeyDown={(e) => {
-            if (e.key === 'ArrowRight' || e.key === 'ArrowUp') {
-              e.preventDefault();
-              setVolume(Math.min(1, volume + 0.05));
-            } else if (e.key === 'ArrowLeft' || e.key === 'ArrowDown') {
-              e.preventDefault();
-              setVolume(Math.max(0, volume - 0.05));
-            }
-          }}
-        >
-          <div className="volume-bar-fill" style={{ width: `${volume * 100}%` }}>
-            <div className="progress-thumb" />
+
+        <div className="pb-vol-group">
+          <button className="icon-btn" onClick={() => setVolume(volume > 0 ? 0 : 0.8)} aria-label={volume === 0 ? 'Unmute' : 'Mute'} type="button">
+            <VolumeIcon size={18} />
+          </button>
+          <div
+            className="pb-vol-bar"
+            onClick={handleVolumeClick}
+            role="slider"
+            tabIndex={0}
+            aria-label="Volume"
+            aria-valuemin={0}
+            aria-valuemax={100}
+            aria-valuenow={Math.round(volume * 100)}
+            onKeyDown={(e) => {
+              if (e.key === 'ArrowRight' || e.key === 'ArrowUp') { e.preventDefault(); setVolume(Math.min(1, volume + 0.05)); }
+              else if (e.key === 'ArrowLeft' || e.key === 'ArrowDown') { e.preventDefault(); setVolume(Math.max(0, volume - 0.05)); }
+            }}
+          >
+            <div className="pb-vol-fill" style={{ width: `${volume * 100}%` }}>
+              <div className="pb-progress-thumb" />
+            </div>
           </div>
         </div>
       </div>
