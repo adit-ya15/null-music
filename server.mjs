@@ -253,15 +253,18 @@ app.get("/api/yt/lyrics", async (req, res) => {
 });
 
 // ─────────────────────────────────────────────
-// yt-dlp — get stream URL (cached)
+// stream URL extraction (youtubei.js primary, yt-dlp fallback)
 // ─────────────────────────────────────────────
 
 // ─────────────────────────────────────────────
 // yt-dlp argument builder
 // ─────────────────────────────────────────────
 
-function ytDlpBaseArgs(videoId) {
-    const args = ["-f", "bestaudio", "--js-runtimes", "node"];
+function ytDlpBaseArgs(videoId, { playerClient } = {}) {
+    const args = ["-f", "bestaudio"];
+    // Use android_vr client by default — returns pre-signed URLs (no decipher needed)
+    const client = playerClient || "android_vr";
+    args.push("--extractor-args", `youtube:player_client=${client}`);
     if (YT_EXTRACTOR_ARGS) args.push("--extractor-args", YT_EXTRACTOR_ARGS);
     if (YT_COOKIES_FILE) args.push("--cookies", YT_COOKIES_FILE);
     if (YT_SOURCE_ADDRESS) args.push("--source-address", YT_SOURCE_ADDRESS);
@@ -270,21 +273,34 @@ function ytDlpBaseArgs(videoId) {
 }
 
 // ─────────────────────────────────────────────
-// get audio stream URL via yt-dlp (used by /stream endpoint)
+// get audio stream URL via yt-dlp
 // ─────────────────────────────────────────────
 
 async function getStreamUrl(videoId) {
     const cached = streamCache.get(videoId);
     if (cached && cached.expiry > Date.now()) return cached.url;
 
-    const args = ytDlpBaseArgs(videoId);
-    // Insert --get-url before the URL arg
-    args.splice(args.length - 1, 0, "--get-url");
-
-    const { stdout } = await execFileAsync(YT_DLP_BIN, args, { timeout: 30000 });
-
-    const url = stdout.trim();
-    if (!url) throw new Error("yt-dlp returned no URL");
+    // Primary: android_vr client (pre-signed URLs, no decipher needed)
+    let url;
+    try {
+        const args = ytDlpBaseArgs(videoId);
+        args.splice(args.length - 1, 0, "--get-url");
+        const { stdout } = await execFileAsync(YT_DLP_BIN, args, { timeout: 30000 });
+        url = stdout.trim();
+        if (!url) throw new Error("yt-dlp (android_vr) returned no URL");
+        console.log(`[stream] yt-dlp android_vr OK for ${videoId}`);
+    } catch (err) {
+        // Fallback: default client with JS runtime
+        console.warn(`[stream] android_vr failed for ${videoId}: ${err.message}, trying default client…`);
+        const args2 = ["-f", "bestaudio", "--js-runtimes", "node", "--get-url"];
+        if (YT_COOKIES_FILE) args2.push("--cookies", YT_COOKIES_FILE);
+        if (YT_SOURCE_ADDRESS) args2.push("--source-address", YT_SOURCE_ADDRESS);
+        args2.push(`https://music.youtube.com/watch?v=${videoId}`);
+        const { stdout } = await execFileAsync(YT_DLP_BIN, args2, { timeout: 30000 });
+        url = stdout.trim();
+        if (!url) throw new Error("yt-dlp (default) returned no URL");
+        console.log(`[stream] yt-dlp default OK for ${videoId}`);
+    }
 
     streamCache.set(videoId, { url, expiry: Date.now() + CACHE_TTL });
     return url;
@@ -317,9 +333,23 @@ app.get("/api/yt/pipe/:videoId", async (req, res) => {
         } catch { streamCache.delete(videoId); }
     }
 
-    // Strategy 2: spawn yt-dlp and pipe audio directly to response
+    // Strategy 2: get a fresh URL via youtubei.js / yt-dlp and proxy it
+    try {
+        const freshUrl = await getStreamUrl(videoId);
+        const headers = {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+        };
+        if (req.headers.range) headers.Range = req.headers.range;
+        const upstream = await fetch(freshUrl, { headers });
+        if (upstream.ok || upstream.status === 206) {
+            return pipeUpstream(upstream, res);
+        }
+    } catch (urlErr) {
+        console.warn(`[pipe] URL-based stream failed for ${videoId}: ${urlErr.message}, falling back to yt-dlp pipe…`);
+    }
+
+    // Strategy 3: spawn yt-dlp and pipe audio directly to response (last resort)
     const args = ytDlpBaseArgs(videoId);
-    // Output to stdout
     args.splice(args.length - 1, 0, "-o", "-");
 
     res.setHeader("Content-Type", "audio/webm");
@@ -356,9 +386,6 @@ app.get("/api/yt/pipe/:videoId", async (req, res) => {
     req.on("close", () => {
         proc.kill("SIGTERM");
     });
-
-    // Also try to cache the URL for future fast-path requests
-    getStreamUrl(videoId).catch(() => { /* best-effort */ });
 });
 
 function pipeUpstream(upstream, res) {
