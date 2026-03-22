@@ -389,6 +389,15 @@ app.get("/api/yt/pipe/:videoId", async (req, res) => {
         return res.status(400).send("Invalid videoId");
     }
 
+    // Note: This is a streaming endpoint. `curl -I` (HEAD) is not a reliable test.
+    // We still handle HEAD quickly to avoid apparent hangs during debugging.
+    if (req.method === 'HEAD') {
+        res.status(200);
+        res.setHeader('Content-Type', 'audio/webm');
+        res.setHeader('Accept-Ranges', 'none');
+        return res.end();
+    }
+
     // Strategy 1: resolve a URL via resolver/cache and proxy it (fast path)
     try {
         const innertube = await getYT();
@@ -424,6 +433,13 @@ app.get("/api/yt/pipe/:videoId", async (req, res) => {
     // Strategy 2: queued yt-dlp process piping (last resort; concurrency-limited)
     res.setHeader("Content-Type", "audio/webm");
     res.setHeader("Accept-Ranges", "none");
+
+    // Flush headers early so reverse proxies (Nginx) start the response immediately.
+    try {
+        res.flushHeaders?.();
+    } catch {
+        // ignore
+    }
 
     const startTimeoutMs = Math.max(1000, Number(process.env.YTDLP_PIPE_START_TIMEOUT_MS || 8000));
 
@@ -513,6 +529,14 @@ function pipeUpstream(upstream, res) {
     if (!upstream.headers.get("accept-ranges")) {
         res.setHeader("Accept-Ranges", "bytes");
     }
+
+    // Flush headers early so clients/proxies don't wait for the first chunk.
+    try {
+        res.flushHeaders?.();
+    } catch {
+        // ignore
+    }
+
     const reader = upstream.body.getReader();
     const pump = async () => {
         while (true) {
