@@ -5,6 +5,7 @@ import { dedupe } from '../lib/dedupe.mjs';
 import { metrics } from '../lib/metrics.mjs';
 import { youtubeiGetAudioUrl } from '../providers/youtubeiProvider.mjs';
 import { pipedGetAudioUrl } from '../providers/pipedProvider.mjs';
+import { ytdlCoreGetAudioUrl } from '../providers/ytdlCoreProvider.mjs';
 import { soundcloudGetAudioUrl } from '../providers/soundcloudProvider.mjs';
 import { ytdlpGetUrl } from '../providers/ytdlpProvider.mjs';
 import { ytdlpQueue } from '../queue/ytdlpQueue.mjs';
@@ -66,14 +67,21 @@ export async function resolveStreamUrl({
       return url;
     };
 
-    // 4) SoundCloud API tertiary (cross-platform search for same artist/title)
+    // 4) ytdl-core tertiary (no external binary)
     const tertiary = async () => {
+      const url = await ytdlCoreGetAudioUrl(videoId);
+      if (!url) return null;
+      return url;
+    };
+
+    // 5) SoundCloud API quaternary (cross-platform search for same artist/title)
+    const quaternary = async () => {
       const url = await soundcloudGetAudioUrl(videoId, title, artist);
       if (!url) return null;
       return url;
     };
 
-    // 5) yt-dlp fallback (queued + retried) + validation + circuit breaker
+    // 6) yt-dlp fallback (queued + retried) + validation + circuit breaker
     const guardedFallback = async () => {
       if (!ytdlpBin) return null;
       if (ytdlpFailureCount > YTDLP_CB_THRESHOLD) {
@@ -143,10 +151,25 @@ export async function resolveStreamUrl({
       if (url) metrics.increment('resolver.secondary.success');
     }
 
-    if (!url && title) {
+    if (!url) {
       try {
         url = await withTimeout(
           retry(tertiary, 1, {
+            delayMs: 0,
+            onError: (err) => logger.warn('resolver', 'ytdl-core attempt failed', { videoId, error: err?.message }),
+          }),
+          PRIMARY_TIMEOUT_MS
+        );
+      } catch {
+        // ignore
+      }
+      if (url) metrics.increment('resolver.tertiary.success');
+    }
+
+    if (!url && title) {
+      try {
+        url = await withTimeout(
+          retry(quaternary, 1, {
             delayMs: 0,
             onError: (err) => logger.warn('resolver', 'soundcloud attempt failed', { videoId, error: err?.message }),
           }),
@@ -155,7 +178,7 @@ export async function resolveStreamUrl({
       } catch {
         // ignore
       }
-      if (url) metrics.increment('resolver.tertiary.success');
+      if (url) metrics.increment('resolver.quaternary.success');
     }
 
     if (!url) {

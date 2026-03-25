@@ -10,7 +10,22 @@ function scoreAudioFormat(fmt) {
 }
 
 export async function youtubeiGetAudioUrl(innertube, videoId) {
-  const info = await innertube.music.getInfo(videoId);
+  let info = null;
+  try {
+    info = await innertube.music.getInfo(videoId);
+  } catch {
+    // ignore, fall back below
+  }
+
+  // Some videos return incomplete streaming data via the Music endpoint.
+  // Fallback to the regular getInfo() which often includes streaming data.
+  if (!info?.streaming_data?.adaptive_formats?.length) {
+    try {
+      info = await innertube.getInfo(videoId);
+    } catch {
+      // ignore
+    }
+  }
 
   const formats = info?.streaming_data?.adaptive_formats || [];
   const audio = formats
