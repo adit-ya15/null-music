@@ -224,7 +224,7 @@ app.get("/api/yt/search", async (req, res) => {
 
         const results = songs.slice(0, parseInt(limit)).map((song) => ({
             id: song.id,
-            title: song.title || "Unknown",
+            title: typeof song.title === 'string' ? song.title : (song.title?.toString?.() || song.title?.text || "Unknown"),
             artist:
                 song.artists?.map((a) => a.name).join(", ") || "Unknown",
             artists:
@@ -365,10 +365,11 @@ app.get("/api/yt/trending", async (req, res) => {
 
         for (const section of home.sections || []) {
             for (const item of section.contents || []) {
-                if (item.id && item.title) {
+                // Video IDs are exactly 11 characters. PLaylist IDs are longer (PL... or VLPL...)
+                if (item.id && item.id.length === 11 && item.title) {
                     songs.push({
                         id: item.id,
-                        title: item.title,
+                        title: typeof item.title === 'string' ? item.title : (item.title?.toString?.() || item.title?.text || "Unknown"),
                         artist:
                             item.artists?.map((a) => a.name).join(", ") || "",
                         thumbnail: item.thumbnail?.[0]?.url,
@@ -431,11 +432,21 @@ app.get("/api/yt/pipe/:videoId", async (req, res) => {
     try {
         const innertube = await getYT();
         const cache = await cachePromise;
+        
+        let title, author;
+        try {
+            const info = await innertube.music.getInfo(videoId);
+            title = info.basic_info?.title;
+            author = info.basic_info?.author;
+        } catch { /* metadata is optional but used for fallback routing */ }
+
         const freshUrl = await resolveStreamUrl({
             innertube,
             ytdlpBin: YT_DLP_BIN,
             cache,
             videoId,
+            title,
+            artist: author
         });
         const headers = {
             "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
