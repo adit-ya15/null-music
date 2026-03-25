@@ -10,7 +10,7 @@ import { fileURLToPath } from "url";
 import { createProxyMiddleware } from "http-proxy-middleware";
 import rateLimit from "express-rate-limit";
 import timeout from "connect-timeout";
-
+import { createCache } from "./backend/cache/cache.mjs";
 
 import { resolveStreamUrl } from "./backend/resolver/streamResolver.mjs";
 import { downloadToCache, getCachedFilePath } from "./backend/cache/audioCache.mjs";
