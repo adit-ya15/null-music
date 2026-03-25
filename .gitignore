@@ -22,7 +22,8 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
-cookies.txt
+cookies.txtls
+
 
 # Local debug artifacts (do not commit)
 build_error.txt

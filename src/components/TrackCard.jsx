@@ -1,115 +1,104 @@
-import { Heart, Play, Pause } from 'lucide-react';
-import { usePlayer } from '../context/PlayerContext';
-
-const FALLBACK_COVER = 'https://placehold.co/300x300/27272a/71717a?text=%E2%99%AA';
+import { Heart, MoreHorizontal, Play } from 'lucide-react';
 
 export default function TrackCard({
   track,
-  isFavorite,
-  onToggleFavorite,
-  trackList,
-  playMode = 'list',
+  isActive,
+  isPlaying,
+  isFav,
+  onPlay,
+  onFav,
   onContextMenu,
-  index,
+  variant = 'list', // 'list' | 'tile'
 }) {
-  const { currentTrack, isPlaying, playTrack } = usePlayer();
-  const isActive = currentTrack?.id === track.id;
+  if (!track) return null;
 
-  const title = track?.title || 'Unknown Track';
-  const artist = track?.artist || 'Unknown Artist';
-  const coverArt = track?.coverArt || FALLBACK_COVER;
+  const coverUrl = track.coverArt || '';
 
-  const handlePlay = () => {
-    playTrack(track, trackList, { mode: playMode });
-  };
-
-  const openKeyboardContextMenu = () => {
-    if (!onContextMenu) return;
-    onContextMenu(
-      {
-        preventDefault: () => {},
-        clientX: window.innerWidth / 2,
-        clientY: window.innerHeight / 2,
-      },
-      track,
-      trackList
+  if (variant === 'tile') {
+    return (
+      <div className="tile-card" onClick={() => onPlay?.(track)}>
+        <div
+          className="tile-cover"
+          style={coverUrl ? { backgroundImage: `url(${coverUrl})` } : undefined}
+        >
+          {isActive && isPlaying && (
+            <div className="playing-overlay">
+              <div className="eq-bar">
+                <span /><span /><span /><span />
+              </div>
+            </div>
+          )}
+        </div>
+        <div className="tile-title">{track.title || 'Untitled'}</div>
+        <div className="tile-artist">{track.artist || 'Unknown'}</div>
+      </div>
     );
-  };
+  }
 
+  // List row (default)
   return (
     <div
-      className={`track-card ${isActive ? 'track-card--active' : ''}`}
-      onClick={handlePlay}
+      className={`track-card${isActive ? ' track-card--active' : ''}`}
+      onClick={() => onPlay?.(track)}
       onContextMenu={(e) => {
         e.preventDefault();
-        if (onContextMenu) {
-          onContextMenu(e, track, trackList);
-        }
+        onContextMenu?.(e, track);
       }}
-      role="button"
-      tabIndex={0}
-      aria-label={`Play ${title} by ${artist}`}
-      aria-pressed={isActive && isPlaying}
-      onKeyDown={(e) => {
-        if (e.key === 'Enter' || e.key === ' ') {
-          e.preventDefault();
-          handlePlay();
-        }
-        if ((e.shiftKey && e.key === 'F10') || e.key === 'ContextMenu') {
-          e.preventDefault();
-          openKeyboardContextMenu();
-        }
-      }}
-      style={typeof index === 'number' ? { animationDelay: `${Math.min(index * 30, 240)}ms` } : undefined}
     >
       <div className="cover-art-wrapper">
         <div
           className="cover-art"
-          style={{
-            backgroundImage: `url(${coverArt})`,
-            backgroundSize: 'cover',
-            backgroundPosition: 'center',
-          }}
+          style={coverUrl ? { backgroundImage: `url(${coverUrl})` } : undefined}
         >
-          <span className={`source-badge ${track.source === 'youtube' ? 'badge-yt' : 'badge-sv'}`}>
-            {track.source === 'youtube' ? 'YT' : 'SV'}
-          </span>
+          {track.source && (
+            <span className={`source-badge badge-${track.source === 'saavn' ? 'sv' : 'yt'}`}>
+              {track.source === 'saavn' ? 'SV' : 'YT'}
+            </span>
+          )}
 
-          <div className={`cover-play-overlay ${isActive && isPlaying ? 'cover-play-visible' : ''}`}>
-            {isActive && isPlaying ? (
+          {isActive && isPlaying ? (
+            <div className="playing-overlay">
               <div className="eq-bar">
                 <span /><span /><span /><span />
               </div>
-            ) : (
+            </div>
+          ) : (
+            <div className="cover-play-overlay">
               <div className="cover-play-circle">
-                <Play fill="white" size={20} style={{ marginLeft: 2 }} />
+                <Play size={18} fill="#fff" color="#fff" />
               </div>
-            )}
-          </div>
+            </div>
+          )}
         </div>
       </div>
 
       <div className="track-info">
         <div className="track-text">
-          <h4 className="track-title" title={title}>
-            {title}
-          </h4>
-          <p className="artist-name" title={artist}>
-            {artist}
-          </p>
+          <div className="track-title">{track.title || 'Untitled'}</div>
+          <div className="artist-name">{track.artist || 'Unknown'}</div>
         </div>
-        <button
-          className={`fav-btn ${isFavorite ? 'fav-btn--active' : ''}`}
-          onClick={(e) => {
-            e.stopPropagation();
-            onToggleFavorite(track);
-          }}
-          aria-label={isFavorite ? `Remove ${title} from favorites` : `Add ${title} to favorites`}
-          aria-pressed={isFavorite}
-          type="button"
-        >
-          <Heart size={16} fill={isFavorite ? 'currentColor' : 'none'} />
-        </button>
+
+        <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+          {isFav && (
+            <button
+              className="fav-btn fav-btn--active"
+              onClick={(e) => { e.stopPropagation(); onFav?.(track); }}
+              title="Remove from favorites"
+            >
+              <Heart size={16} fill="currentColor" />
+            </button>
+          )}
+          <button
+            className="track-menu-btn"
+            onClick={(e) => {
+              e.stopPropagation();
+              onContextMenu?.(e, track);
+            }}
+            title="More options"
+          >
+            <MoreHorizontal size={20} />
+          </button>
+        </div>
       </div>
     </div>
   );

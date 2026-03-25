@@ -5,6 +5,10 @@ import App from './App.jsx';
 import { PlayerProvider } from './context/PlayerContext.jsx';
 import './index.css';
 
+// Default to dark (Apple Music style). Persist user preference.
+const savedTheme = localStorage.getItem('aura-theme') || 'dark';
+document.documentElement.dataset.theme = savedTheme;
+
 // Global error handlers — show crash info on screen so we can debug black-screen issues
 window.onerror = (msg, src, line, col, err) => {
   const el = document.getElementById('root');

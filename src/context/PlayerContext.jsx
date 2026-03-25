@@ -89,12 +89,36 @@ export const PlayerProvider = ({ children }) => {
   const playedIdsRef = useRef(new Set());
   const isFetchingRecsRef = useRef(false);
   const pendingRecsRef = useRef([]);
+  const recoSnapshotRef = useRef({ ts: 0, userId: null, data: null });
   const currentTrackRef = useRef(null);
   const repeatModeRef = useRef(repeatMode);
   const loadAndPlayRef = useRef(null);
   const queueRef = useRef(queue);
   const queueIndexRef = useRef(queueIndex);
   const playSeqRef = useRef(0);
+
+  const getRecommendationSnapshot = useCallback(async () => {
+    const userId = getOrCreateUserId();
+    const now = Date.now();
+
+    // Cache to avoid spamming the backend during autoplay and prefetch.
+    if (
+      recoSnapshotRef.current.data &&
+      recoSnapshotRef.current.userId === userId &&
+      now - recoSnapshotRef.current.ts < 2 * 60 * 1000
+    ) {
+      return recoSnapshotRef.current.data;
+    }
+
+    try {
+      const res = await recommendationsApi.getRecommendationsSafe(userId);
+      if (!res.ok || !res.data) return null;
+      recoSnapshotRef.current = { ts: now, userId, data: res.data };
+      return res.data;
+    } catch {
+      return null;
+    }
+  }, []);
 
   /* -------------------------- PLAY TRACK -------------------------- */
 
@@ -283,7 +307,7 @@ export const PlayerProvider = ({ children }) => {
     try {
       const results = [];
 
-      // Strategy 1: YouTube Music "Up Next" (best quality recs)
+      // Strategy 1: YouTube Music "Up Next" (highest-quality autoplay)
       const videoId = seedTrack.videoId || (seedTrack.source === 'youtube' ? seedTrack.id.replace(/^yt-/, '') : null);
       if (videoId) {
         try {
@@ -294,32 +318,29 @@ export const PlayerProvider = ({ children }) => {
         }
       }
 
-      // Strategy 2: Saavn suggestions (if Saavn track)
-      if (seedTrack.source === 'saavn' && results.length < 5) {
-        try {
-          const suggestions = await saavnApi.getSongSuggestionsSafe(seedTrack.id);
-          if (suggestions.ok) results.push(...suggestions.data);
-        } catch {
-          // ignore
+      // Strategy 2: Your backend recommendations (made-for-you / based-on-recent / trending)
+      // These tend to be more stable than generic search fallbacks.
+      if (results.length < 12) {
+        const snapshot = await getRecommendationSnapshot();
+        if (snapshot) {
+          results.push(
+            ...(snapshot.basedOnRecent || []),
+            ...(snapshot.madeForYou || []),
+            ...(snapshot.trending || [])
+          );
         }
       }
 
-      // Strategy 3: Search by artist name
-      if (results.length < 8 && seedTrack.artist) {
+      // Strategy 3: Saavn suggestions (if Saavn track)
+      // Strategy 3: Targeted YouTube search by title (+ artist) as a last resort
+      // Avoid artist-only search; it produces a lot of low-signal results.
+      if (results.length < 16) {
         try {
-          const artistRes = await youtubeApi.searchSongsSafe(seedTrack.artist, 10);
-          if (artistRes.ok) results.push(...artistRes.data);
-        } catch {
-          // ignore
-        }
-      }
-
-      // Strategy 4: Search by title + artist keywords
-      if (results.length < 10) {
-        try {
-          const q = `${seedTrack.title} ${seedTrack.artist}`.trim();
-          const similarRes = await youtubeApi.searchSongsSafe(q, 8);
-          if (similarRes.ok) results.push(...similarRes.data);
+          const q = `${seedTrack.title || ''} ${seedTrack.artist || ''}`.trim();
+          if (q) {
+            const similarRes = await youtubeApi.searchSongsSafe(q, 8);
+            if (similarRes.ok) results.push(...similarRes.data);
+          }
         } catch {
           // ignore
         }
@@ -335,6 +356,7 @@ export const PlayerProvider = ({ children }) => {
         if (seen.has(track.id)) return false;
         if (queueIds.has(track.id)) return false;
         if (playedIdsRef.current.has(track.id)) return false;
+        if (seedTrack?.id && track.id === seedTrack.id) return false;
         seen.add(track.id);
         return true;
       }).slice(0, 20);
@@ -344,7 +366,7 @@ export const PlayerProvider = ({ children }) => {
     } finally {
       isFetchingRecsRef.current = false;
     }
-  }, []);
+  }, [getRecommendationSnapshot]);
 
   /* -------------------------- NEXT TRACK -------------------------- */
 
@@ -476,12 +498,14 @@ export const PlayerProvider = ({ children }) => {
         }
       }
 
-      if (seedTrack.source === 'saavn') {
-        try {
-          const suggestions = await saavnApi.getSongSuggestionsSafe(seedTrack.id);
-          if (suggestions.ok) results.push(...suggestions.data);
-        } catch {
-          // ignore
+      // Fill from backend recommendations to keep Discover mixes higher-quality.
+      if (results.length < 10) {
+        const snapshot = await getRecommendationSnapshot();
+        if (snapshot) {
+          results.push(
+            ...(snapshot.basedOnRecent || []),
+            ...(snapshot.madeForYou || [])
+          );
         }
       }
 
@@ -504,7 +528,7 @@ export const PlayerProvider = ({ children }) => {
     } catch {
       return [];
     }
-  }, []);
+  }, [getRecommendationSnapshot]);
 
   /* -------------------------- AUTO RADIO TOGGLE -------------------------- */
 

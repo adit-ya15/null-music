@@ -1,7 +1,6 @@
 import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { Play, User, Shuffle, ListPlus } from 'lucide-react';
 import { usePlayer } from './context/PlayerContext';
-import { saavnApi } from './api/saavn';
 import { youtubeApi } from './api/youtube';
 import { recommendationsApi } from './api/recommendations';
 import { useLocalStorage } from './hooks/useLocalStorage';
@@ -19,6 +18,7 @@ import { logError } from './utils/logger';
 
 const COLORS = ['#ec4899', '#10b981', '#f59e0b', '#3b82f6', '#ef4444', '#8b5cf6', '#06b6d4'];
 const randomColor = () => COLORS[Math.floor(Math.random() * COLORS.length)];
+const onlyYoutube = (tracks) => (Array.isArray(tracks) ? tracks.filter((t) => t && t.source !== 'saavn') : []);
 
 function App() {
   const {
@@ -116,20 +116,20 @@ function App() {
     setTrendingError(null);
 
     try {
-      // Prefer backend "global plays" trending (fast + cached). If empty, fall back to Saavn.
+      // Prefer backend "global plays" trending (fast + cached). If empty, fall back to YouTube search.
       const userId = getOrCreateUserId();
       const recoRes = await recommendationsApi.getRecommendationsSafe(userId);
       if (recoRes.ok && recoRes.data?.trending?.length) {
-        setTopTracks(recoRes.data.trending);
+        setTopTracks(onlyYoutube(recoRes.data.trending));
         return;
       }
 
-      const result = await saavnApi.getTrendingSafe();
-      if (!result.ok) {
+      const ytFallback = await youtubeApi.searchSongsSafe('Top hits', 20);
+      if (!ytFallback.ok) {
         setTopTracks([]);
-        setTrendingError(result.error || 'Unable to load trending songs.');
+        setTrendingError(ytFallback.error || 'Unable to load trending songs.');
       } else {
-        setTopTracks((result.data || []).map(saavnApi.formatTrack));
+        setTopTracks(onlyYoutube(ytFallback.data || []));
       }
     } catch (error) {
       logError('app.loadTrending', error);
@@ -150,8 +150,8 @@ function App() {
 
     try {
       const [newRes, popularRes] = await Promise.all([
-        saavnApi.searchSongsSafe('new releases 2026', 8),
-        saavnApi.searchSongsSafe('popular hits', 8),
+        youtubeApi.searchSongsSafe('New releases', 8),
+        youtubeApi.searchSongsSafe('Popular right now', 8),
       ]);
 
       if (!newRes.ok && !popularRes.ok) {
@@ -159,8 +159,8 @@ function App() {
       }
 
       setDiscoverSections([
-        { title: 'New Releases', tracks: (newRes.data || []).map(saavnApi.formatTrack) },
-        { title: 'Popular Right Now', tracks: (popularRes.data || []).map(saavnApi.formatTrack) },
+        { title: 'New Releases', tracks: onlyYoutube(newRes.data || []) },
+        { title: 'Popular Right Now', tracks: onlyYoutube(popularRes.data || []) },
       ]);
 
       const seedTrack = favorites[0] || history[0] || null;
@@ -169,7 +169,7 @@ function App() {
           const recommendations = await getRecommendationsFor(seedTrack);
           setPersonalMix(
             recommendations?.length
-              ? { title: `Because you listened to ${seedTrack.title}`, tracks: recommendations }
+              ? { title: `Because you listened to ${seedTrack.title}`, tracks: onlyYoutube(recommendations) }
               : null
           );
         } catch (error) {
@@ -182,7 +182,7 @@ function App() {
 
       const seenIds = new Set();
       const dailyMixTracks = [];
-      for (const track of [...favorites, ...history]) {
+      for (const track of onlyYoutube([...favorites, ...history])) {
         if (!track?.id || seenIds.has(track.id)) continue;
         seenIds.add(track.id);
         dailyMixTracks.push(track);
@@ -196,8 +196,8 @@ function App() {
         const userId = getOrCreateUserId();
         const recoRes = await recommendationsApi.getRecommendationsSafe(userId);
         if (recoRes.ok && recoRes.data) {
-          setMadeForYou(recoRes.data.madeForYou?.length ? { title: 'Made for you', tracks: recoRes.data.madeForYou } : null);
-          setBasedOnRecent(recoRes.data.basedOnRecent?.length ? { title: 'Based on your recent plays', tracks: recoRes.data.basedOnRecent } : null);
+          setMadeForYou(recoRes.data.madeForYou?.length ? { title: 'Made for you', tracks: onlyYoutube(recoRes.data.madeForYou) } : null);
+          setBasedOnRecent(recoRes.data.basedOnRecent?.length ? { title: 'Based on your recent plays', tracks: onlyYoutube(recoRes.data.basedOnRecent) } : null);
         } else {
           setMadeForYou(null);
           setBasedOnRecent(null);
@@ -267,21 +267,15 @@ function App() {
     setSearchError(null);
 
     try {
-      const [saavnRes, ytRes] = await Promise.all([
-        saavnApi.searchSongsSafe(term),
-        youtubeApi.searchSongsSafe(term, 10),
-      ]);
+      const ytRes = await youtubeApi.searchSongsSafe(term, 20);
 
-      if (!saavnRes.ok && !ytRes.ok) {
+      if (!ytRes.ok) {
         setSearchResults([]);
-        setSearchError([saavnRes.error, ytRes.error].filter(Boolean).join(' | ') || 'Search is unavailable right now.');
+        setSearchError(ytRes.error || 'Search is unavailable right now.');
         return;
       }
 
-      const combinedResults = [
-        ...(saavnRes.data || []).map(saavnApi.formatTrack),
-        ...(ytRes.data || []),
-      ];
+      const combinedResults = onlyYoutube(ytRes.data || []);
 
       setSearchResults(combinedResults);
       setSearchCache((previousCache) => ({
@@ -341,9 +335,6 @@ function App() {
     }
     displayedTracks = Array.from(counts.values()).sort((a, b) => b.count - a.count).map((entry) => entry.track);
     sectionTitle = 'Most Played';
-  } else if (activeTab === 'short-tracks') {
-    displayedTracks = favorites.filter((track) => (track.duration || 0) > 0 && track.duration <= 180);
-    sectionTitle = 'Short & Sweet (under 3 min)';
   } else if (playlistMatch) {
     const playlist = playlists.find((item) => item.id === playlistMatch[1]);
     displayedTracks = playlist?.tracks || [];
@@ -352,6 +343,9 @@ function App() {
     displayedTracks = topTracks;
     sectionTitle = activeTab === 'your-library' ? 'Your Library' : 'Top Tracks';
   }
+
+  // Saavn should be fallback-only; hide Saavn tracks from all browse/search sections.
+  displayedTracks = onlyYoutube(displayedTracks);
 
   const renderedTracks = displayedTracks.slice(0, 150);
   const glowColor = dominantColor.replace('rgb', 'rgba').replace(')', ', 0.15)');
