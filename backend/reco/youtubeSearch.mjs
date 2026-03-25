@@ -13,10 +13,10 @@ function mapInnertubeSong(song) {
   return {
     id: `yt-${song.id}`,
     videoId: song.id,
-    title: song.title || 'Unknown',
+    title: typeof song.title === 'string' ? song.title : (song.title?.toString?.() || song.title?.text || "Unknown"),
     artist: song.artists?.map((a) => a.name).join(', ') || 'YouTube Artist',
     album: song.album?.name || 'YouTube Music',
-    coverArt: song.thumbnails?.[0]?.url || '',
+    coverArt: song.thumbnail?.[0]?.url || song.thumbnails?.[0]?.url || '',
     duration: parseDuration(song.duration?.text || song.duration || 0),
     source: 'youtube',
     // Leave streamUrl empty so the client uses its configured /api/yt pipe base.

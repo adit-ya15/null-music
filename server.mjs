@@ -611,7 +611,7 @@ app.get("/api/yt/up-next/:videoId", async (req, res) => {
 
                 results.push({
                     id,
-                    title: item.title?.text || item.title || "Unknown",
+                    title: typeof item.title === 'string' ? item.title : (item.title?.toString?.() || item.title?.text || "Unknown"),
                     artist:
                         item.artists
                             ?.map((a) => a.name?.text || a.name || "")
@@ -634,8 +634,8 @@ app.get("/api/yt/up-next/:videoId", async (req, res) => {
                     ),
                     durationText:
                         item.duration?.text || item.duration || "",
-                    thumbnail: item.thumbnails?.[0]?.url || "",
-                    thumbnails: item.thumbnails || [],
+                    thumbnail: item.thumbnail?.[0]?.url || item.thumbnails?.[0]?.url || "",
+                    thumbnails: item.thumbnail || item.thumbnails || [],
                 });
             } catch {
                 // skip malformed items
