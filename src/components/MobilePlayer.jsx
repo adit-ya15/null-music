@@ -8,7 +8,7 @@ import {
 
 const FALLBACK_COVER = 'https://placehold.co/500x500/27272a/71717a?text=%E2%99%AA';
 
-export default function MobilePlayer({ onOpenLyrics, onOpenQueue, onOpenEqualizer }) {
+export default function MobilePlayer({ onOpenLyrics, onOpenQueue, onOpenEqualizer, isSuppressed = false }) {
   const {
     currentTrack,
     isPlaying,
@@ -139,10 +139,11 @@ export default function MobilePlayer({ onOpenLyrics, onOpenQueue, onOpenEqualize
     <div className="mobile-player-wrapper" aria-live="polite">
       {/* ─── Mini Player ────────────────────────── */}
       <div
-        className={`mobile-mini-player ${isExpanded ? 'hidden' : ''}`}
+        className={`mobile-mini-player ${isExpanded || isSuppressed ? 'hidden' : ''}`}
         onClick={() => setIsExpanded(true)}
         role="button"
         tabIndex={0}
+        aria-hidden={isExpanded || isSuppressed}
         onKeyDown={(e) => {
           if (e.key === 'Enter' || e.key === ' ') {
             e.preventDefault();

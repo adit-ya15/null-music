@@ -165,6 +165,9 @@ public class MusicService extends Service {
         player.addListener(new Player.Listener() {
             @Override
             public void onIsPlayingChanged(boolean isPlaying) {
+                if (isPlaying) {
+                    ensureEqualizerReady();
+                }
                 updateNotification();
                 updatePlaybackState();
             }
@@ -226,6 +229,7 @@ public class MusicService extends Service {
     public static JSObject getEqualizerStateSnapshot() {
         MusicService service = instance;
         if (service != null) {
+            service.ensureEqualizerReady();
             return service.buildEqualizerState();
         }
 
@@ -242,6 +246,7 @@ public class MusicService extends Service {
         desiredEqualizerEnabled = enabled;
         MusicService service = instance;
         if (service != null) {
+            service.ensureEqualizerReady();
             service.applyEqualizerState();
         }
     }
@@ -250,6 +255,7 @@ public class MusicService extends Service {
         desiredEqualizerPreset = Math.max(0, preset);
         MusicService service = instance;
         if (service != null) {
+            service.ensureEqualizerReady();
             service.applyEqualizerState();
         }
     }
@@ -388,6 +394,21 @@ public class MusicService extends Service {
         }
     }
 
+    private void ensureEqualizerReady() {
+        if (equalizer != null || player == null) {
+            return;
+        }
+
+        try {
+            int audioSessionId = player.getAudioSessionId();
+            if (audioSessionId > 0) {
+                configureEqualizer(audioSessionId);
+            }
+        } catch (Exception e) {
+            android.util.Log.w("MusicService", "Unable to prepare equalizer", e);
+        }
+    }
+
     private void applyEqualizerState() {
         if (equalizer == null) return;
 
@@ -416,6 +437,7 @@ public class MusicService extends Service {
     }
 
     private JSObject buildEqualizerState() {
+        ensureEqualizerReady();
         JSObject ret = new JSObject();
         JSONArray presets = new JSONArray();
         boolean available = equalizer != null;
@@ -436,7 +458,9 @@ public class MusicService extends Service {
         ret.put("currentPreset", desiredEqualizerPreset);
         ret.put("presets", presets);
         if (!available) {
-            ret.put("message", "Start playback on Android to use the equalizer.");
+            ret.put("message", player != null && player.isPlaying()
+                ? "Equalizer is initializing for the active playback session."
+                : "Start playback on Android to use the equalizer.");
         }
         return ret;
     }

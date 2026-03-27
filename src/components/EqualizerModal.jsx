@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { usePlayer } from '../context/PlayerContext';
 
 export default function EqualizerModal({ isOpen, onClose }) {
@@ -9,6 +9,17 @@ export default function EqualizerModal({ isOpen, onClose }) {
     setEqualizerPreset,
   } = usePlayer();
   const [isSaving, setIsSaving] = useState(false);
+
+  useEffect(() => {
+    if (!isOpen) return undefined;
+
+    refreshEqualizerState();
+    const timer = setTimeout(() => {
+      refreshEqualizerState();
+    }, 600);
+
+    return () => clearTimeout(timer);
+  }, [isOpen, refreshEqualizerState]);
 
   if (!isOpen) return null;
 

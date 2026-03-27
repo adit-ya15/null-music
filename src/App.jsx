@@ -1224,7 +1224,7 @@ function App() {
             {/* ═══════════ SEARCH TAB ═══════════ */}
             {activeTab === 'search' && (
               <>
-                <div style={{ padding: '12px 16px 8px' }}>
+                <div className="search-screen-header">
                   <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 8 }}>
                     <h1 className="top-bar-title" style={{ flex: 1 }}>Search</h1>
                     <button className="theme-toggle-btn" onClick={toggleTheme} title="Toggle theme">
@@ -1257,7 +1257,12 @@ function App() {
 
       {/* Players */}
       <PlaybackBar onOpenLyrics={() => setIsLyricsOpen(true)} onOpenQueue={() => setIsQueueOpen(true)} onOpenEqualizer={() => setIsEqualizerOpen(true)} />
-      <MobilePlayer onOpenLyrics={() => setIsLyricsOpen(true)} onOpenQueue={() => setIsQueueOpen(true)} onOpenEqualizer={() => setIsEqualizerOpen(true)} />
+      <MobilePlayer
+        onOpenLyrics={() => setIsLyricsOpen(true)}
+        onOpenQueue={() => setIsQueueOpen(true)}
+        onOpenEqualizer={() => setIsEqualizerOpen(true)}
+        isSuppressed={contextMenu.open}
+      />
       <EqualizerModal isOpen={isEqualizerOpen} onClose={() => setIsEqualizerOpen(false)} />
       <LyricsModal isOpen={isLyricsOpen} onClose={() => setIsLyricsOpen(false)} />
       <QueueViewer isOpen={isQueueOpen} onClose={() => setIsQueueOpen(false)} />

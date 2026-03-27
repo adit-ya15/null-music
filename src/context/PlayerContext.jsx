@@ -127,6 +127,7 @@ export const PlayerProvider = ({ children }) => {
   const queueIndexRef = useRef(queueIndex);
   const playSeqRef = useRef(0);
   const nativeQueueSyncSeqRef = useRef(0);
+  const resolvedTrackMapRef = useRef(new Map());
 
   /* ── Gapless playback: pre-resolve next track URL ── */
   const preResolvedRef = useRef({ trackId: null, resolvedTrack: null, resolving: false });
@@ -190,8 +191,23 @@ export const PlayerProvider = ({ children }) => {
     cacheCheckedAt: patch.cacheCheckedAt || baseTrack?.cacheCheckedAt || 0,
   }), []);
 
+  const getResolvedTrackFromCache = useCallback((track) => {
+    if (!track?.id) return track;
+    const cachedTrack = resolvedTrackMapRef.current.get(track.id);
+    return cachedTrack ? mergeResolvedTrack(track, cachedTrack) : track;
+  }, [mergeResolvedTrack]);
+
   const persistResolvedTrack = useCallback((resolvedTrack) => {
     if (!resolvedTrack?.id) return;
+
+    const mergedResolved = mergeResolvedTrack(resolvedTrack, resolvedTrack);
+    resolvedTrackMapRef.current.set(resolvedTrack.id, mergedResolved);
+    if (resolvedTrackMapRef.current.size > 250) {
+      const oldestKey = resolvedTrackMapRef.current.keys().next().value;
+      if (oldestKey) {
+        resolvedTrackMapRef.current.delete(oldestKey);
+      }
+    }
 
     setQueue((prev) => {
       let changed = false;
@@ -257,6 +273,8 @@ export const PlayerProvider = ({ children }) => {
   const resolvePlayableTrack = useCallback(async (track, options = {}) => {
     const { forceRefresh = false, record = true, reason = 'playback' } = options;
     if (!track) throw new Error("Track is required");
+
+    track = getResolvedTrackFromCache(track);
 
     const isNative = Capacitor.isNativePlatform();
     const existingUrl = typeof track.streamUrl === "string" ? track.streamUrl.trim() : "";
@@ -340,7 +358,7 @@ export const PlayerProvider = ({ children }) => {
       }
     }
     return resolved;
-  }, [mergeResolvedTrack, recordReliabilityEvent, trySaavnFallback]);
+  }, [getResolvedTrackFromCache, mergeResolvedTrack, recordReliabilityEvent, trySaavnFallback]);
 
   /** Pre-resolve stream URL for a track (used for gapless preloading). */
   const preResolveStream = useCallback(async (track) => {
@@ -546,9 +564,14 @@ export const PlayerProvider = ({ children }) => {
 
     if (!track) return;
 
+    const hydratedTrack = getResolvedTrackFromCache(track);
+    const hydratedTrackList = Array.isArray(trackList)
+      ? trackList.map((item) => getResolvedTrackFromCache(item))
+      : trackList;
+
     const session = buildPlaybackSession({
-      track,
-      trackList,
+      track: hydratedTrack,
+      trackList: hydratedTrackList,
       mode: options.mode
     });
 
@@ -558,9 +581,9 @@ export const PlayerProvider = ({ children }) => {
 
     pendingRecsRef.current = [];
 
-    loadAndPlay(track);
+    loadAndPlay(hydratedTrack);
 
-  }, [loadAndPlay]);
+  }, [getResolvedTrackFromCache, loadAndPlay]);
 
   /* -------------------------- TOGGLE PLAY -------------------------- */
 
