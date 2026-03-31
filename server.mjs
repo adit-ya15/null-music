@@ -93,6 +93,7 @@ const YT_SOURCE_ADDRESS = process.env.YT_SOURCE_ADDRESS;
 const YT_EXTRACTOR_ARGS = process.env.YT_EXTRACTOR_ARGS || "";
 const YT_DLP_JS_RUNTIMES = process.env.YT_DLP_JS_RUNTIMES || "node";
 const YT_DLP_PROXY = getYtdlpProxy();
+const YT_PLAYER_SKIP = process.env.YT_PLAYER_SKIP || "webpage,configs";
 
 const RECO_API_KEY = process.env.RECO_API_KEY || "";
 
@@ -123,6 +124,8 @@ logger.info("config", "yt-dlp runtime configuration", {
     jsRuntimes: YT_DLP_JS_RUNTIMES,
     hasCookiesFile: Boolean(process.env.YT_COOKIES_FILE),
     hasProxy: Boolean(YT_DLP_PROXY),
+    playerSkip: YT_PLAYER_SKIP,
+    extractorArgs: YT_EXTRACTOR_ARGS || "",
 });
 
 // resolve dirname
@@ -969,7 +972,7 @@ async function pipeYtdlpToResponse({ req, res, videoId, contentDisposition = "" 
             });
         });
 
-        const first = await pipeAttempt({ playerClient: "mediaconnect" });
+        const first = await pipeAttempt({ playerClient: "mweb" });
         if (first.ok) {
             if (!res.writableEnded) res.end();
             return;
@@ -1099,6 +1102,8 @@ app.get("/api/yt/health", (req, res) => {
             hasCookiesFile: Boolean(cookiesFile),
             cookiesFileExists: cookiesFile ? fs.existsSync(cookiesFile) : false,
             hasProxy: Boolean(YT_DLP_PROXY),
+            playerSkip: YT_PLAYER_SKIP,
+            extractorArgs: YT_EXTRACTOR_ARGS || "",
         },
     });
 });
@@ -1149,6 +1154,8 @@ app.get("/api/yt/health/extract", async (req, res) => {
                 hasCookiesFile: Boolean(cookiesFile),
                 cookiesFileExists: cookiesFile ? fs.existsSync(cookiesFile) : false,
                 hasProxy: Boolean(YT_DLP_PROXY),
+                playerSkip: YT_PLAYER_SKIP,
+                extractorArgs: YT_EXTRACTOR_ARGS || "",
             },
             stderr: stderr.slice(-1500),
         });
@@ -1163,6 +1170,8 @@ app.get("/api/yt/health/extract", async (req, res) => {
                 hasCookiesFile: Boolean(cookiesFile),
                 cookiesFileExists: cookiesFile ? fs.existsSync(cookiesFile) : false,
                 hasProxy: Boolean(YT_DLP_PROXY),
+                playerSkip: YT_PLAYER_SKIP,
+                extractorArgs: YT_EXTRACTOR_ARGS || "",
             },
         });
     }

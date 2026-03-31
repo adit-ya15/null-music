@@ -60,8 +60,8 @@ export function buildYtdlpArgs(videoId, options = {}) {
   args.push('--add-header', 'User-Agent: com.google.android.youtube/19.09.37 (Linux; Android 13)');
   args.push('--add-header', 'Accept-Language: en-US,en;q=0.9');
 
-  // Use mweb client and PO Token provider natively.
-  const skipWebpage = process.env.YT_PLAYER_SKIP || '';
+  // Prefer mweb with webpage/config skipping for modern yt-dlp + PO token setups.
+  const skipWebpage = process.env.YT_PLAYER_SKIP || 'webpage,configs';
   const extractorParts = [`player_client=${playerClient}`];
   if (skipWebpage) extractorParts.push(`player_skip=${skipWebpage}`);
   args.push('--extractor-args', `youtube:${extractorParts.join(';')}`);
@@ -108,7 +108,7 @@ export async function ytdlpGetUrl(bin, videoId, options = {}) {
     logger.warn('provider.ytdlp', 'yt-dlp requires sign-in/cookies (skipping)', {
       videoId,
       code,
-      playerClient: options?.playerClient || process.env.YT_PLAYER_CLIENTS || 'mediaconnect',
+      playerClient: options?.playerClient || process.env.YT_PLAYER_CLIENTS || 'mweb',
       hasCookies: Boolean(process.env.YT_COOKIES_FILE),
       hasProxy: Boolean(getYtdlpProxy()),
       stderr: err.slice(0, 300),

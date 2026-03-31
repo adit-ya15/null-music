@@ -155,7 +155,7 @@ export function downloadToCache(videoId, ytdlpBin) {
     args.push('--add-header', 'Accept-Language: en-US,en;q=0.9');
 
     const playerClient = process.env.YT_PLAYER_CLIENTS || 'mweb';
-    const skipWebpage = process.env.YT_PLAYER_SKIP || '';
+    const skipWebpage = process.env.YT_PLAYER_SKIP || 'webpage,configs';
     const extractorParts = [`player_client=${playerClient}`];
     if (skipWebpage) extractorParts.push(`player_skip=${skipWebpage}`);
     args.push('--extractor-args', `youtube:${extractorParts.join(';')}`);
