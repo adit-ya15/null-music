@@ -82,28 +82,28 @@ export const authApi = {
     return unwrapAuthBody(result, 'Unable to sign in right now.');
   },
 
-  sendPhoneOtp: async ({ phone }) => {
+  sendEmailOtp: async ({ email, name }) => {
     const result = await requestAuth(
-      'auth.phone.sendOtp',
+      'auth.email.sendOtp',
       'post',
-      '/auth/phone/send-otp',
-      { phone },
+      '/auth/email/send-otp',
+      { email, name },
       { timeout: 15000 },
-      'Phone OTP is unavailable right now.'
+      'Email OTP is unavailable right now.'
     );
-    return unwrapAuthBody(result, 'Phone OTP is unavailable right now.');
+    return unwrapAuthBody(result, 'Email OTP is unavailable right now.');
   },
 
-  verifyPhoneOtp: async ({ phone, code, name }) => {
+  verifyEmailOtp: async ({ email, code, name }) => {
     const result = await requestAuth(
-      'auth.phone.verifyOtp',
+      'auth.email.verifyOtp',
       'post',
-      '/auth/phone/verify-otp',
-      { phone, code, name },
+      '/auth/email/verify-otp',
+      { email, code, name },
       { timeout: 15000 },
-      'OTP verification failed.'
+      'Email OTP verification failed.'
     );
-    return unwrapAuthBody(result, 'OTP verification failed.');
+    return unwrapAuthBody(result, 'Email OTP verification failed.');
   },
 
   getCurrentUser: async (token) => {

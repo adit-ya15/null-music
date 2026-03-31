@@ -18,6 +18,15 @@ async function readJsonFile(filePath, fallback) {
   }
 }
 
+async function fileExists(filePath) {
+  try {
+    await fs.access(filePath);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 async function ensureSchema() {
   await query(`
     CREATE TABLE IF NOT EXISTS users (
@@ -220,6 +229,18 @@ async function main() {
   const dataDir = resolveDataDir();
   const usersPath = path.join(dataDir, 'users.json');
   const issuesPath = path.join(dataDir, 'track-issues.json');
+
+  const [hasUsersFile, hasIssuesFile] = await Promise.all([
+    fileExists(usersPath),
+    fileExists(issuesPath),
+  ]);
+
+  if (!hasUsersFile || !hasIssuesFile) {
+    console.warn('[migrate] data dir:', dataDir);
+    if (!hasUsersFile) console.warn('[migrate] missing:', usersPath);
+    if (!hasIssuesFile) console.warn('[migrate] missing:', issuesPath);
+    console.warn('[migrate] Tip: set AURA_DATA_DIR to the folder containing your JSON files.');
+  }
 
   await ensureSchema();
 

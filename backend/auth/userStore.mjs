@@ -602,6 +602,94 @@ export async function createOrUpdatePhoneUser({ phone, name }) {
   });
 }
 
+export async function createOrUpdateEmailUser({ email, name }) {
+  const normalizedEmail = normalizeEmail(email);
+
+  if (!isValidEmail(normalizedEmail)) {
+    throw buildError("Enter a valid email address.", 400);
+  }
+
+  return queueMutation(async () => {
+    if (USE_POSTGRES) {
+      await ensureUserSchema();
+      const now = Date.now();
+      let user = await getUserByLookup({ email: normalizedEmail });
+
+      if (!user) {
+        const inserted = await insertUser({
+          id: randomUUID(),
+          email: normalizedEmail,
+          phone: '',
+          name: normalizeName(name, normalizedEmail, ''),
+          googleSub: '',
+          passwordHash: '',
+          passwordSalt: '',
+          createdAt: now,
+          updatedAt: now,
+          lastLoginAt: now,
+          library: emptyUserLibrary(),
+        });
+        return {
+          user: toPublicUser(inserted),
+          library: normalizeLibraryPayload(inserted.library),
+        };
+      }
+
+      const nextName = name ? normalizeName(name, normalizedEmail, user.phone) : user.name;
+      const res = await query(
+        `
+          UPDATE users SET
+            email = $2,
+            name = $3,
+            last_login_at = $4,
+            updated_at = $4
+          WHERE id = $1
+          RETURNING *;
+        `,
+        [user.id, normalizedEmail, nextName, now],
+      );
+      const updated = rowToStoredUser(res.rows[0]);
+      return {
+        user: toPublicUser(updated),
+        library: normalizeLibraryPayload(updated.library),
+      };
+    }
+
+    const db = await readUsersDb();
+    const now = Date.now();
+    let user = findUserByEmailOrPhone(db.users, { email: normalizedEmail });
+
+    if (!user) {
+      user = {
+        id: randomUUID(),
+        email: normalizedEmail,
+        phone: "",
+        name: normalizeName(name, normalizedEmail, ""),
+        googleSub: "",
+        passwordHash: "",
+        passwordSalt: "",
+        createdAt: now,
+        updatedAt: now,
+        lastLoginAt: now,
+        library: emptyUserLibrary(),
+      };
+      db.users.push(user);
+    } else {
+      if (name) user.name = normalizeName(name, normalizedEmail, user.phone);
+      user.email = normalizedEmail;
+      user.lastLoginAt = now;
+      user.updatedAt = now;
+    }
+
+    await writeUsersDb(db);
+
+    return {
+      user: toPublicUser(user),
+      library: normalizeLibraryPayload(user.library),
+    };
+  });
+}
+
 export async function updateUserPassword({ userId, currentPassword, newPassword }) {
   if (!userId) {
     throw buildError("User id is required.", 400);

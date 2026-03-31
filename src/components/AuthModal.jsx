@@ -1,13 +1,11 @@
 import { useState } from 'react';
-import { KeyRound, LogIn, LogOut, Smartphone, User, UserPlus } from 'lucide-react';
+import { KeyRound, LogIn, LogOut, User, UserPlus } from 'lucide-react';
 
 function buildInitialForm(mode) {
   return {
     name: '',
     email: '',
     password: '',
-    phone: '',
-    code: '',
     currentPassword: '',
     newPassword: '',
     mode,
@@ -25,14 +23,11 @@ export default function AuthModal({
   onClose,
   onSubmit,
   onLogout,
-  onSendOtp,
   onChangePassword,
   isSubmitting,
   error,
   session,
   syncStatus,
-  otpStatus,
-  phoneOtpEnabled,
 }) {
   const [form, setForm] = useState(() => buildInitialForm(mode));
 
@@ -43,7 +38,6 @@ export default function AuthModal({
   const avatarLabel = userLabel.trim().charAt(0).toUpperCase() || 'A';
   const userSubtitle = session?.user?.email || session?.user?.phone || '';
   const supportsPasswordChange = Boolean(session?.user?.hasPassword || session?.user?.email);
-  const isPhoneMode = mode === 'phone';
 
   const handleChange = (key) => (event) => {
     const value = event.target.value;
@@ -55,7 +49,6 @@ export default function AuthModal({
       ...buildInitialForm(nextMode),
       email: previous.email,
       name: previous.name,
-      phone: previous.phone,
     }));
     onModeChange(nextMode);
   };
@@ -69,14 +62,7 @@ export default function AuthModal({
       name: form.name,
       email: form.email,
       password: form.password,
-      phone: form.phone,
-      code: form.code,
     });
-  };
-
-  const handleSendOtp = async () => {
-    if (isSubmitting) return;
-    await onSendOtp({ phone: form.phone });
   };
 
   const handleChangePassword = async (event) => {
@@ -176,7 +162,7 @@ export default function AuthModal({
           </>
         ) : (
           <>
-            <div className="auth-switcher auth-switcher--triple" role="tablist" aria-label="Account mode">
+            <div className="auth-switcher" role="tablist" aria-label="Account mode">
               <button
                 className={`auth-switcher-btn ${mode === 'login' ? 'auth-switcher-btn--active' : ''}`}
                 onClick={() => handleModeChange('login')}
@@ -191,17 +177,10 @@ export default function AuthModal({
               >
                 <UserPlus size={14} /> Sign up
               </button>
-              <button
-                className={`auth-switcher-btn ${mode === 'phone' ? 'auth-switcher-btn--active' : ''}`}
-                onClick={() => handleModeChange('phone')}
-                type="button"
-              >
-                <Smartphone size={14} /> OTP
-              </button>
             </div>
 
             <form onSubmit={handleSubmit}>
-              {(mode === 'signup' || mode === 'phone') && (
+              {mode === 'signup' && (
                 <label className="auth-field">
                   <span>Name</span>
                   <input
@@ -214,69 +193,32 @@ export default function AuthModal({
                 </label>
               )}
 
-              {isPhoneMode ? (
-                <>
-                  <label className="auth-field">
-                    <span>Phone</span>
-                    <input
-                      className="modal-input"
-                      type="tel"
-                      value={form.phone}
-                      onChange={handleChange('phone')}
-                      placeholder="+91 9876543210"
-                      autoComplete="tel"
-                      required
-                    />
-                  </label>
+              <label className="auth-field">
+                <span>Email</span>
+                <input
+                  className="modal-input"
+                  type="email"
+                  value={form.email}
+                  onChange={handleChange('email')}
+                  placeholder="you@example.com"
+                  autoComplete="email"
+                  required
+                />
+              </label>
 
-                  <div className="auth-otp-row">
-                    <label className="auth-field auth-field--grow">
-                      <span>OTP code</span>
-                      <input
-                        className="modal-input"
-                        value={form.code}
-                        onChange={handleChange('code')}
-                        placeholder="6-digit OTP"
-                        inputMode="numeric"
-                      />
-                    </label>
-                    <button className="btn-secondary auth-otp-btn" onClick={handleSendOtp} disabled={isSubmitting || !phoneOtpEnabled} type="button">
-                      {phoneOtpEnabled ? 'Send OTP' : 'OTP Unavailable'}
-                    </button>
-                  </div>
-
-                  {otpStatus && <p className="auth-muted">{otpStatus}</p>}
-                </>
-              ) : (
-                <>
-                  <label className="auth-field">
-                    <span>Email</span>
-                    <input
-                      className="modal-input"
-                      type="email"
-                      value={form.email}
-                      onChange={handleChange('email')}
-                      placeholder="you@example.com"
-                      autoComplete="email"
-                      required
-                    />
-                  </label>
-
-                  <label className="auth-field">
-                    <span>Password</span>
-                    <input
-                      className="modal-input"
-                      type="password"
-                      value={form.password}
-                      onChange={handleChange('password')}
-                      placeholder="At least 6 characters"
-                      autoComplete={mode === 'signup' ? 'new-password' : 'current-password'}
-                      minLength={6}
-                      required
-                    />
-                  </label>
-                </>
-              )}
+              <label className="auth-field">
+                <span>Password</span>
+                <input
+                  className="modal-input"
+                  type="password"
+                  value={form.password}
+                  onChange={handleChange('password')}
+                  placeholder="At least 6 characters"
+                  autoComplete={mode === 'signup' ? 'new-password' : 'current-password'}
+                  minLength={6}
+                  required
+                />
+              </label>
 
               {error && <p className="auth-error">{error}</p>}
 
@@ -294,9 +236,7 @@ export default function AuthModal({
                 <button className="btn-primary" disabled={isSubmitting} type="submit">
                   {isSubmitting
                     ? 'Working...'
-                    : isPhoneMode
-                      ? 'Verify OTP'
-                      : mode === 'signup'
+                    : mode === 'signup'
                         ? 'Create account'
                         : 'Login'}
                 </button>

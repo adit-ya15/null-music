@@ -14,7 +14,7 @@ import timeout from "connect-timeout";
 import { createCache } from "./backend/cache/cache.mjs";
 import { createAuthToken, extractBearerToken, verifyAuthToken } from "./backend/auth/token.mjs";
 import {
-    createOrUpdatePhoneUser,
+    createOrUpdateEmailUser,
     createUser,
     getUserById,
     getUserLibrary,
@@ -22,7 +22,7 @@ import {
     updateUserLibrary,
     updateUserPassword,
 } from "./backend/auth/userStore.mjs";
-import { sendPhoneOtp, verifyPhoneOtpCode } from "./backend/auth/phoneOtp.mjs";
+import { sendEmailOtp, verifyEmailOtpCode } from "./backend/auth/emailOtp.mjs";
 import { recordTrackIssue } from "./backend/feedback/issueStore.mjs";
 
 import { resolveStreamUrl, resolveStreamWithMeta } from "./backend/resolver/streamResolver.mjs";
@@ -313,34 +313,34 @@ app.post("/api/auth/login", async (req, res) => {
     }
 });
 
-app.post("/api/auth/phone/send-otp", async (req, res) => {
+app.post("/api/auth/email/send-otp", async (req, res) => {
     try {
-        const { phone } = req.body || {};
-        const result = await sendPhoneOtp(phone);
-        return res.json({ ok: true, phone: result.phone, status: result.status });
+        const { email, name } = req.body || {};
+        const result = await sendEmailOtp(email, { name });
+        return res.json({ ok: true, email: result.email, status: result.status });
     } catch (error) {
-        logger.warn("auth", "Phone OTP send failed", { error: error?.message });
+        logger.warn("auth", "Email OTP send failed", { error: error?.message });
         return res.status(getErrorStatus(error, 500)).json({
             ok: false,
-            error: getErrorMessage(error, "Phone OTP is unavailable right now."),
+            error: getErrorMessage(error, "Email OTP is unavailable right now."),
         });
     }
 });
 
-app.post("/api/auth/phone/verify-otp", async (req, res) => {
+app.post("/api/auth/email/verify-otp", async (req, res) => {
     try {
-        const { phone, code, name } = req.body || {};
-        const verification = await verifyPhoneOtpCode(phone, code);
-        const session = await createOrUpdatePhoneUser({
-            phone: verification.phone,
-            name,
+        const { email, code, name } = req.body || {};
+        const verification = await verifyEmailOtpCode(email, code);
+        const session = await createOrUpdateEmailUser({
+            email: verification.email,
+            name: name || verification.name,
         });
         return res.json(await buildSessionPayload(session));
     } catch (error) {
-        logger.warn("auth", "Phone OTP verify failed", { error: error?.message });
+        logger.warn("auth", "Email OTP verify failed", { error: error?.message });
         return res.status(getErrorStatus(error, 500)).json({
             ok: false,
-            error: getErrorMessage(error, "Phone OTP verification failed."),
+            error: getErrorMessage(error, "Email OTP verification failed."),
         });
     }
 });

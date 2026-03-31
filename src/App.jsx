@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { Capacitor } from '@capacitor/core';
-import { Play, User, Shuffle, ListPlus, Sun, Moon, ChevronRight, Heart, Clock, Music, ListMusic, Disc3, Sparkles, SkipForward, Download, Upload, Settings, ShieldCheck, Smartphone, WifiOff, Trash2, Pencil, ArrowUp, ArrowDown, AlertCircle, X } from 'lucide-react';
+import { Play, User, Shuffle, ListPlus, Sun, Moon, ChevronRight, Heart, Clock, Music, ListMusic, Disc3, Sparkles, SkipForward, Download, Upload, Settings, ShieldCheck, Mail, WifiOff, Trash2, Pencil, ArrowUp, ArrowDown, AlertCircle, X } from 'lucide-react';
 import { usePlayer } from './context/PlayerContext';
 import { youtubeApi } from './api/youtube';
 import { nativeMediaApi } from './api/nativeMedia';
@@ -214,7 +214,6 @@ function App() {
   const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
   const [authModalMode, setAuthModalMode] = useState('login');
   const [authError, setAuthError] = useState('');
-  const [otpStatus, setOtpStatus] = useState('');
   const [isAuthSubmitting, setIsAuthSubmitting] = useState(false);
   const [isLibrarySyncing, setIsLibrarySyncing] = useState(false);
   const [librarySyncMessage, setLibrarySyncMessage] = useState('');
@@ -230,7 +229,6 @@ function App() {
   });
   const platformLabel = Capacitor.isNativePlatform() ? 'Android app' : 'Web preview';
   const libraryImportInputRef = useRef(null);
-  const phoneOtpEnabled = useMemo(() => import.meta.env.VITE_PHONE_OTP_ENABLED !== 'false', []);
 
   const downloadedTrackMap = useMemo(() => {
     const next = new Map();
@@ -820,7 +818,6 @@ function App() {
 
   const openAuthModal = useCallback((mode = 'login') => {
     setAuthError('');
-    setOtpStatus('');
     setAuthModalMode(mode);
     setIsAuthModalOpen(true);
   }, []);
@@ -846,24 +843,20 @@ function App() {
       library: normalizeLibraryPayload(result.data?.library || emptyUserLibrary()),
     };
 
-    setOtpStatus('');
     setIsAuthModalOpen(false);
     setIsLibrarySyncing(true);
     setLibrarySyncMessage('Syncing account library...');
     return true;
   }, [updateAuthSession]);
 
-  const handleAuthSubmit = useCallback(async ({ mode, name, email, password, phone, code }) => {
+  const handleAuthSubmit = useCallback(async ({ mode, name, email, password }) => {
     setAuthError('');
-    setOtpStatus('');
     setIsAuthSubmitting(true);
 
     try {
       const result = mode === 'signup'
         ? await authApi.signUp({ name, email, password })
-        : mode === 'phone'
-          ? await authApi.verifyPhoneOtp({ phone, code, name })
-          : await authApi.login({ email, password });
+        : await authApi.login({ email, password });
 
       return await completeAuthSuccess(result);
     } catch (error) {
@@ -874,29 +867,6 @@ function App() {
       setIsAuthSubmitting(false);
     }
   }, [completeAuthSuccess]);
-
-  const handleSendOtp = useCallback(async ({ phone }) => {
-    setAuthError('');
-    setOtpStatus('');
-    setIsAuthSubmitting(true);
-
-    try {
-      const result = await authApi.sendPhoneOtp({ phone });
-      if (!result.ok) {
-        setAuthError(result.error || 'Could not send OTP.');
-        return false;
-      }
-
-      setOtpStatus(`OTP sent to ${result.data?.phone || phone}.`);
-      return true;
-    } catch (error) {
-      logError('app.handleSendOtp', error);
-      setAuthError(error?.message || 'Could not send OTP.');
-      return false;
-    } finally {
-      setIsAuthSubmitting(false);
-    }
-  }, []);
 
   const handleChangePassword = useCallback(async ({ currentPassword, newPassword }) => {
     if (!authSession?.token) {
@@ -932,7 +902,6 @@ function App() {
   const handleLogout = useCallback(() => {
     clearAuthSessionState();
     setAuthError('');
-    setOtpStatus('');
     setIsAuthModalOpen(false);
   }, [clearAuthSessionState]);
 
@@ -2038,7 +2007,7 @@ function App() {
           <p>Background playback, lockscreen controls, queue sync, and metadata updates stay aligned with the current track.</p>
         </div>
         <div className="settings-feature-card">
-          <Smartphone size={18} className="settings-feature-icon" />
+          <Mail size={18} className="settings-feature-icon" />
           <strong>Android-first extras</strong>
           <p>Widget, equalizer, native downloads, and device media controls work in the Android app with graceful fallbacks on web.</p>
         </div>
@@ -2349,18 +2318,14 @@ function App() {
         onClose={() => {
           setIsAuthModalOpen(false);
           setAuthError('');
-          setOtpStatus('');
         }}
         onSubmit={handleAuthSubmit}
         onLogout={handleLogout}
-        onSendOtp={handleSendOtp}
         onChangePassword={handleChangePassword}
         isSubmitting={isAuthSubmitting}
         error={authError}
         session={authSession}
         syncStatus={librarySyncStatus}
-        otpStatus={otpStatus}
-        phoneOtpEnabled={phoneOtpEnabled}
       />
       <input
         ref={libraryImportInputRef}
