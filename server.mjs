@@ -29,7 +29,7 @@ import { resolveStreamUrl, resolveStreamWithMeta } from "./backend/resolver/stre
 import { downloadToCache, getCachedFilePath, getCacheStatus } from "./backend/cache/audioCache.mjs";
 import { ytdlpQueue } from "./backend/queue/ytdlpQueue.mjs";
 import { buildYtdlpArgs, getYtdlpProxy } from "./backend/providers/ytdlpProvider.mjs";
-import { hasDabConfig } from "./backend/providers/dabProvider.mjs";
+import { dabDebugSearch, hasDabConfig } from "./backend/providers/dabProvider.mjs";
 import { spawnWithTimeout } from "./backend/lib/spawnWithTimeout.mjs";
 import { logger } from "./backend/lib/logger.mjs";
 import { metrics } from "./backend/lib/metrics.mjs";
@@ -1184,6 +1184,23 @@ app.get("/api/yt/health/extract", async (req, res) => {
             },
         });
     }
+});
+
+app.get("/api/dab/health/search", async (req, res) => {
+    const title = String(req.query?.title || "").trim();
+    const artist = String(req.query?.artist || "").trim();
+    const videoId = String(req.query?.videoId || "").trim();
+
+    if (!title) {
+        return res.status(400).json({
+            ok: false,
+            error: "title query parameter is required",
+            hasDab: hasDabConfig(),
+        });
+    }
+
+    const result = await dabDebugSearch(title, artist, { videoId });
+    return res.status(result.ok ? 200 : 502).json(result);
 });
 
 app.get("/api/metrics", (req, res) => {

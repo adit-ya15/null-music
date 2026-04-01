@@ -170,6 +170,84 @@ export function hasDabConfig() {
   return Boolean(getBaseUrl());
 }
 
+export async function dabDebugSearch(title, artist = '', options = {}) {
+  const baseUrl = getBaseUrl();
+  const videoId = trim(options.videoId || '');
+  if (!baseUrl || !title) {
+    return {
+      ok: false,
+      error: !baseUrl ? 'DAB is not configured' : 'title is required',
+      query: `${artist ? `${artist} ` : ''}${title}`.trim(),
+      hasConfig: Boolean(baseUrl),
+    };
+  }
+
+  const searchPath = trim(process.env.DAB_SEARCH_PATH || '/search');
+  const queryParam = trim(process.env.DAB_SEARCH_QUERY_PARAM || 'q');
+  const limitParam = trim(process.env.DAB_SEARCH_LIMIT_PARAM || 'limit');
+  const timeoutMs = Math.max(1000, Number(process.env.DAB_TIMEOUT_MS || 8000));
+  const searchUrl = joinUrl(baseUrl, searchPath);
+  const query = `${artist ? `${artist} ` : ''}${title}`.trim();
+
+  const client = axios.create({
+    timeout: timeoutMs,
+    headers: {
+      Accept: 'application/json',
+      ...buildAuthHeaders(),
+    },
+  });
+
+  try {
+    const response = await client.get(searchUrl, {
+      params: {
+        [queryParam]: query,
+        ...(limitParam ? { [limitParam]: Number(process.env.DAB_SEARCH_LIMIT || 8) } : {}),
+      },
+    });
+
+    const items = collectSearchItems(response?.data);
+    const match = pickBestTrackMatch(items, { title, artist }, {
+      getTitle: getCandidateTitle,
+      getArtist: getCandidateArtist,
+    });
+
+    const matchedCandidate = match?.candidate || null;
+    const rawStreamUrl = matchedCandidate
+      ? getCandidateStreamUrl(matchedCandidate) || await resolveCandidateViaDetails(client, baseUrl, matchedCandidate)
+      : '';
+    const streamAlive = rawStreamUrl ? await isStreamAlive(rawStreamUrl) : false;
+
+    return {
+      ok: Boolean(match && rawStreamUrl && streamAlive),
+      hasConfig: true,
+      videoId,
+      query,
+      searchUrl,
+      resultCount: items.length,
+      matched: Boolean(match),
+      matchedCandidate: matchedCandidate
+        ? {
+            id: getCandidateId(matchedCandidate),
+            title: getCandidateTitle(matchedCandidate),
+            artist: getCandidateArtist(matchedCandidate),
+          }
+        : null,
+      streamUrlFound: Boolean(rawStreamUrl),
+      streamAlive,
+      streamUrlPreview: rawStreamUrl ? `${rawStreamUrl.slice(0, 120)}...` : '',
+    };
+  } catch (error) {
+    return {
+      ok: false,
+      hasConfig: true,
+      videoId,
+      query,
+      searchUrl,
+      error: error?.message || 'DAB search failed',
+    };
+  }
+}
+
 async function resolveCandidateViaDetails(client, baseUrl, candidate) {
   const candidateId = getCandidateId(candidate);
   if (!candidateId) return '';
