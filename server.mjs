@@ -29,7 +29,6 @@ import { resolveStreamUrl, resolveStreamWithMeta } from "./backend/resolver/stre
 import { downloadToCache, getCachedFilePath, getCacheStatus } from "./backend/cache/audioCache.mjs";
 import { ytdlpQueue } from "./backend/queue/ytdlpQueue.mjs";
 import { buildYtdlpArgs, getYtdlpProxy } from "./backend/providers/ytdlpProvider.mjs";
-import { dabDebugSearch, hasDabConfig } from "./backend/providers/dabProvider.mjs";
 import { spawnWithTimeout } from "./backend/lib/spawnWithTimeout.mjs";
 import { logger } from "./backend/lib/logger.mjs";
 import { metrics } from "./backend/lib/metrics.mjs";
@@ -125,7 +124,6 @@ logger.info("config", "yt-dlp runtime configuration", {
     jsRuntimes: YT_DLP_JS_RUNTIMES,
     hasCookiesFile: Boolean(process.env.YT_COOKIES_FILE),
     hasProxy: Boolean(YT_DLP_PROXY),
-    hasDab: hasDabConfig(),
     playerSkip: YT_PLAYER_SKIP,
     extractorArgs: YT_EXTRACTOR_ARGS || "",
 });
@@ -492,19 +490,17 @@ app.get("/api/yt/search", async (req, res) => {
 
         const results = songs.slice(0, parseInt(limit)).map((song) => ({
             id: song.id,
-            title: typeof song.title === 'string' ? song.title : (song.title?.toString?.() || song.title?.text || "Unknown"),
-            artist:
-                song.artists?.map((a) => a.name).join(", ") || "Unknown",
-            artists:
-                song.artists?.map((a) => ({
-                    name: a.name,
-                    id: a.channel_id,
-                })) || [],
-            album: song.album?.name || "YouTube Music",
-            duration: parseDuration(song.duration?.text),
+            title: pickText(song.title, song.name) || "Unknown Title",
+            artist: pickArtistName(song).join(", ") || "Unknown Artist",
+            artists: pickArtists(song),
+            album: pickText(song.album?.name, song.album?.text, song.album),
+            duration: parseDuration(song.duration?.text || song.duration),
             durationText: song.duration?.text || "",
-            thumbnail: song.thumbnails?.[0]?.url || "",
-            thumbnails: song.thumbnails || [],
+            thumbnail: pickThumbnailUrl(song),
+            thumbnails: [
+                ...(Array.isArray(song.thumbnails) ? song.thumbnails : []),
+                ...(Array.isArray(song.thumbnail) ? song.thumbnail : []),
+            ],
         }));
 
         res.json({ results });
@@ -723,10 +719,9 @@ app.get("/api/yt/trending", async (req, res) => {
                 if (item.id && item.id.length === 11 && item.title) {
                     songs.push({
                         id: item.id,
-                        title: typeof item.title === 'string' ? item.title : (item.title?.toString?.() || item.title?.text || "Unknown"),
-                        artist:
-                            item.artists?.map((a) => a.name).join(", ") || "",
-                        thumbnail: item.thumbnail?.[0]?.url,
+                        title: pickText(item.title, item.name) || "Unknown Title",
+                        artist: pickArtistName(item).join(", "),
+                        thumbnail: pickThumbnailUrl(item),
                     });
                 }
             }
@@ -1047,31 +1042,20 @@ app.get("/api/yt/up-next/:videoId", async (req, res) => {
 
                 results.push({
                     id,
-                    title: typeof item.title === 'string' ? item.title : (item.title?.toString?.() || item.title?.text || "Unknown"),
-                    artist:
-                        item.artists
-                            ?.map((a) => a.name?.text || a.name || "")
-                            .join(", ") ||
-                        item.author?.text ||
-                        item.author ||
-                        "Unknown",
-                    artists:
-                        item.artists?.map((a) => ({
-                            name: a.name?.text || a.name,
-                            id: a.channel_id,
-                        })) || [],
-                    album:
-                        item.album?.name?.text ||
-                        item.album?.name ||
-                        item.album?.text ||
-                        "YouTube Music",
+                    title: pickText(item.title, item.name) || "Unknown Title",
+                    artist: pickArtistName(item).join(", ") || "Unknown Artist",
+                    artists: pickArtists(item),
+                    album: pickText(item.album?.name, item.album?.text, item.album),
                     duration: parseDuration(
                         item.duration?.text || item.duration
                     ),
                     durationText:
                         item.duration?.text || item.duration || "",
-                    thumbnail: item.thumbnail?.[0]?.url || item.thumbnails?.[0]?.url || "",
-                    thumbnails: item.thumbnail || item.thumbnails || [],
+                    thumbnail: pickThumbnailUrl(item),
+                    thumbnails: [
+                        ...(Array.isArray(item.thumbnail) ? item.thumbnail : []),
+                        ...(Array.isArray(item.thumbnails) ? item.thumbnails : []),
+                    ],
                 });
             } catch {
                 // skip malformed items
@@ -1104,7 +1088,6 @@ app.get("/api/yt/health", (req, res) => {
             hasCookiesFile: Boolean(cookiesFile),
             cookiesFileExists: cookiesFile ? fs.existsSync(cookiesFile) : false,
             hasProxy: Boolean(YT_DLP_PROXY),
-            hasDab: hasDabConfig(),
             playerSkip: YT_PLAYER_SKIP,
             extractorArgs: YT_EXTRACTOR_ARGS || "",
         },
@@ -1160,7 +1143,6 @@ app.get("/api/yt/health/extract", async (req, res) => {
                 hasCookiesFile: Boolean(cookiesFile),
                 cookiesFileExists: cookiesFile ? fs.existsSync(cookiesFile) : false,
                 hasProxy: Boolean(YT_DLP_PROXY),
-                hasDab: hasDabConfig(),
                 playerSkip: YT_PLAYER_SKIP,
                 extractorArgs: YT_EXTRACTOR_ARGS || "",
             },
@@ -1178,29 +1160,11 @@ app.get("/api/yt/health/extract", async (req, res) => {
                 hasCookiesFile: Boolean(cookiesFile),
                 cookiesFileExists: cookiesFile ? fs.existsSync(cookiesFile) : false,
                 hasProxy: Boolean(YT_DLP_PROXY),
-                hasDab: hasDabConfig(),
                 playerSkip: YT_PLAYER_SKIP,
                 extractorArgs: YT_EXTRACTOR_ARGS || "",
             },
         });
     }
-});
-
-app.get("/api/dab/health/search", async (req, res) => {
-    const title = String(req.query?.title || "").trim();
-    const artist = String(req.query?.artist || "").trim();
-    const videoId = String(req.query?.videoId || "").trim();
-
-    if (!title) {
-        return res.status(400).json({
-            ok: false,
-            error: "title query parameter is required",
-            hasDab: hasDabConfig(),
-        });
-    }
-
-    const result = await dabDebugSearch(title, artist, { videoId });
-    return res.status(result.ok ? 200 : 502).json(result);
 });
 
 app.get("/api/metrics", (req, res) => {
@@ -1226,6 +1190,69 @@ function parseDuration(text) {
         return parts[0] * 60 + parts[1];
 
     return parts[0] || 0;
+}
+
+function decodeHtml(value) {
+    return String(value || "")
+        .replace(/&amp;/g, "&")
+        .replace(/&quot;/g, "\"")
+        .replace(/&#39;/g, "'")
+        .replace(/&lt;/g, "<")
+        .replace(/&gt;/g, ">")
+        .trim();
+}
+
+function pickText(...values) {
+    for (const value of values) {
+        if (typeof value === "string" && value.trim()) return decodeHtml(value);
+        if (value && typeof value === "object") {
+            if (typeof value.text === "string" && value.text.trim()) return decodeHtml(value.text);
+            if (typeof value.name === "string" && value.name.trim()) return decodeHtml(value.name);
+            if (typeof value.toString === "function") {
+                const text = value.toString();
+                if (typeof text === "string" && text.trim() && text !== "[object Object]") {
+                    return decodeHtml(text);
+                }
+            }
+        }
+    }
+    return "";
+}
+
+function pickArtists(item) {
+    const artists = Array.isArray(item?.artists) ? item.artists : [];
+    const names = artists
+        .map((artist) => ({
+            name: pickText(artist?.name, artist?.text, artist),
+            id: artist?.channel_id || artist?.id || "",
+        }))
+        .filter((artist) => artist.name);
+
+    if (names.length) return names;
+
+    const fallback = pickText(item?.artist, item?.author, item?.subtitle);
+    return fallback ? [{ name: fallback, id: "" }] : [];
+}
+
+function pickArtistName(item) {
+    return pickArtists(item).map((artist) => artist.name).filter(Boolean);
+}
+
+function pickThumbnailUrl(item) {
+    const candidates = [
+        ...(Array.isArray(item?.thumbnails) ? item.thumbnails : []),
+        ...(Array.isArray(item?.thumbnail) ? item.thumbnail : []),
+    ].filter((entry) => entry?.url);
+
+    if (!candidates.length) return "";
+
+    candidates.sort((a, b) => {
+        const areaA = Number(a.width || 0) * Number(a.height || 0);
+        const areaB = Number(b.width || 0) * Number(b.height || 0);
+        return areaB - areaA;
+    });
+
+    return candidates[0]?.url || "";
 }
 
 function sanitizeFilename(value) {

@@ -3,8 +3,11 @@ import { logger } from '../lib/logger.mjs';
 import { withTimeout } from '../lib/withTimeout.mjs';
 import { dedupe } from '../lib/dedupe.mjs';
 import { metrics } from '../lib/metrics.mjs';
-import { dabGetAudioUrl, hasDabConfig } from '../providers/dabProvider.mjs';
+import { invidiousGetAudioUrl } from '../providers/invidiousProvider.mjs';
+import { pipedGetAudioUrl } from '../providers/pipedProvider.mjs';
+import { saavnGetAudioUrl } from '../providers/saavnProvider.mjs';
 import { soundcloudGetAudioUrl } from '../providers/soundcloudProvider.mjs';
+import { ytdlCoreGetAudioUrl } from '../providers/ytdlCoreProvider.mjs';
 import { ytdlpGetUrl } from '../providers/ytdlpProvider.mjs';
 import { ytdlpQueue } from '../queue/ytdlpQueue.mjs';
 import { isStreamAlive } from '../utils/validateStream.mjs';
@@ -100,13 +103,22 @@ async function resolveStreamWithMetaInternal({
       }
     };
 
-    // 3) Guarded DAB fallback (opt-in, strict title/artist matching)
-    const dabFallback = async () => {
-      if (!hasDabConfig()) return null;
-      return await dabGetAudioUrl(videoId, title, artist);
+    const ytdlCoreFallback = async () => {
+      return await ytdlCoreGetAudioUrl(videoId);
     };
 
-    // 4) SoundCloud final fallback (non-YouTube source only)
+    const pipedFallback = async () => {
+      return await pipedGetAudioUrl(videoId);
+    };
+
+    const invidiousFallback = async () => {
+      return await invidiousGetAudioUrl(videoId);
+    };
+
+    const saavnFallback = async () => {
+      return await saavnGetAudioUrl(videoId, title, artist);
+    };
+
     const soundcloudFallback = async () => {
       const url = await soundcloudGetAudioUrl(videoId, title, artist);
       if (!url) return null;
@@ -132,36 +144,54 @@ async function resolveStreamWithMetaInternal({
       metrics.increment('resolver.primary.success');
     }
 
-    if (!resolved?.url) {
-      try {
-        const url = await withTimeout(
-          retry(dabFallback, 1, {
-            delayMs: 0,
-            onError: (err) => logger.warn('resolver', 'dab attempt failed', { videoId, error: err?.message }),
-          }),
-          PRIMARY_TIMEOUT_MS
-        );
-        if (url) resolved = { url, source: 'dab' };
-      } catch {
-        // ignore
-      }
-      if (resolved?.url) metrics.increment('resolver.secondary.success');
-    }
+    const fallbacks = [
+      {
+        name: 'ytdl-core',
+        metric: 'resolver.secondary.success',
+        fn: ytdlCoreFallback,
+      },
+      {
+        name: 'piped',
+        metric: 'resolver.fallback.used',
+        fn: pipedFallback,
+      },
+      {
+        name: 'invidious',
+        metric: 'resolver.fallback.used',
+        fn: invidiousFallback,
+      },
+      {
+        name: 'saavn',
+        metric: 'resolver.fallback.used',
+        fn: saavnFallback,
+      },
+      {
+        name: 'soundcloud',
+        metric: 'resolver.fallback.used',
+        fn: soundcloudFallback,
+      },
+    ];
 
-    if (!resolved?.url) {
+    for (const fallback of fallbacks) {
+      if (resolved?.url) break;
       try {
         const url = await withTimeout(
-          retry(soundcloudFallback, 1, {
+          retry(fallback.fn, 1, {
             delayMs: 0,
-            onError: (err) => logger.warn('resolver', 'soundcloud attempt failed', { videoId, error: err?.message }),
+            onError: (err) => logger.warn('resolver', `${fallback.name} attempt failed`, {
+              videoId,
+              error: err?.message,
+            }),
           }),
           PRIMARY_TIMEOUT_MS
         );
-        if (url) resolved = { url, source: 'soundcloud' };
+        if (url) {
+          resolved = { url, source: fallback.name };
+          metrics.increment(fallback.metric);
+        }
       } catch {
-        // ignore
+        // ignore and continue to the next provider
       }
-      if (resolved?.url) metrics.increment('resolver.fallback.used');
     }
 
     if (!resolved?.url) {

@@ -5,6 +5,32 @@ import { API_BASE } from './apiBase';
 
 const SAAVN_API_BASE = `${API_BASE}/saavn`;
 
+const decodeHtml = (value) =>
+  String(value || '')
+    .replace(/&amp;/g, '&')
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'")
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .trim();
+
+const pickBestImage = (images = []) => {
+  const valid = (Array.isArray(images) ? images : []).filter((img) => img?.url);
+  if (!valid.length) return '';
+
+  const preferred =
+    valid.find((img) => img.quality === '500x500') ||
+    [...valid].sort((a, b) => {
+      const score = (item) => {
+        const match = String(item.quality || '').match(/(\d+)x(\d+)/);
+        return match ? Number(match[1]) * Number(match[2]) : 0;
+      };
+      return score(b) - score(a);
+    })[0];
+
+  return preferred?.url || '';
+};
+
 const requestSaavn = async (tag, path, config, fallbackMessage) => {
   try {
     const response = await axios.get(`${SAAVN_API_BASE}${path}`, config);
@@ -72,17 +98,14 @@ export const saavnApi = {
     const downloadUrls = saavnSong.downloadUrl || [];
     const highestQuality = downloadUrls.slice(-1)[0]?.url || '';
 
-    const images = saavnSong.image || [];
-    const bestImage = images.find((img) => img.quality === '500x500')?.url || images.slice(-1)[0]?.url || '';
-
     return {
       id: saavnSong.id,
-      title: saavnSong.name,
-      artist: saavnSong.primaryArtists || saavnSong.singers || 'Unknown',
-      album: saavnSong.album?.name || 'Unknown Album',
-      coverArt: bestImage,
+      title: decodeHtml(saavnSong.name) || 'Unknown Title',
+      artist: decodeHtml(saavnSong.primaryArtists || saavnSong.singers) || 'Unknown Artist',
+      album: decodeHtml(saavnSong.album?.name) || '',
+      coverArt: pickBestImage(saavnSong.image || []),
       streamUrl: highestQuality,
-      duration: parseInt(saavnSong.duration, 10),
+      duration: parseInt(saavnSong.duration, 10) || 0,
       source: 'saavn',
       hasLyrics: saavnSong.hasLyrics === 'true' || saavnSong.hasLyrics === true,
     };

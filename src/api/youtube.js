@@ -3,6 +3,62 @@ import { friendlyErrorMessage, logError } from '../utils/logger';
 
 import { buildApiUrl } from './apiBase';
 
+const decodeHtml = (value) =>
+  String(value || '')
+    .replace(/&amp;/g, '&')
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'")
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .trim();
+
+const pickText = (...values) => {
+  for (const value of values) {
+    if (typeof value === 'string' && value.trim()) return decodeHtml(value);
+    if (value && typeof value === 'object') {
+      if (typeof value.text === 'string' && value.text.trim()) return decodeHtml(value.text);
+      if (typeof value.name === 'string' && value.name.trim()) return decodeHtml(value.name);
+      if (typeof value.toString === 'function') {
+        const text = value.toString();
+        if (typeof text === 'string' && text.trim() && text !== '[object Object]') {
+          return decodeHtml(text);
+        }
+      }
+    }
+  }
+  return '';
+};
+
+const pickArtists = (ytSong) => {
+  const artists = Array.isArray(ytSong?.artists) ? ytSong.artists : [];
+  const names = artists
+    .map((artist) => pickText(artist?.name, artist?.text, artist))
+    .filter(Boolean);
+
+  if (names.length) return names.join(', ');
+  return pickText(ytSong?.artist, ytSong?.author) || 'Unknown Artist';
+};
+
+const pickThumbnail = (ytSong) => {
+  const images = [
+    ...(Array.isArray(ytSong?.thumbnails) ? ytSong.thumbnails : []),
+    ...(Array.isArray(ytSong?.thumbnail) ? ytSong.thumbnail : []),
+  ].filter((item) => item?.url);
+
+  if (!images.length) return '';
+
+  const sorted = [...images].sort((a, b) => {
+    const areaA = Number(a.width || 0) * Number(a.height || 0);
+    const areaB = Number(b.width || 0) * Number(b.height || 0);
+    return areaB - areaA;
+  });
+
+  return sorted[0]?.url || '';
+};
+
+const pickAlbum = (ytSong) =>
+  pickText(ytSong?.album?.name, ytSong?.album?.text, ytSong?.album) || '';
+
 const requestYoutube = async (tag, path, config, fallbackMessage) => {
   try {
     const response = await axios.get(buildApiUrl(`/yt${path}`), config);
@@ -151,13 +207,13 @@ export const youtubeApi = {
   formatTrack: (ytSong) => ({
     id: `yt-${ytSong.id}`,
     videoId: ytSong.id,
-    title: ytSong.title || 'Unknown',
-    artist: ytSong.artist || ytSong.artists?.map((a) => a.name).join(', ') || 'YouTube Artist',
-    album: ytSong.album || 'YouTube Music',
-    coverArt: ytSong.thumbnail || ytSong.thumbnails?.[0]?.url || '',
+    title: pickText(ytSong?.title, ytSong?.name) || 'Unknown Title',
+    artist: pickArtists(ytSong),
+    album: pickAlbum(ytSong),
+    coverArt: pickThumbnail(ytSong),
     // Do not assume pipe works for native playback; PlayerContext resolves the best URL at play-time.
     streamUrl: null,
-    duration: ytSong.duration || 0,
+    duration: Number(ytSong.duration || 0),
     source: 'youtube',
   }),
 };
