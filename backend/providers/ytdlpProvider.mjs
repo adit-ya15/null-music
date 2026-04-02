@@ -68,6 +68,7 @@ export function buildYtdlpArgs(videoId, options = {}) {
     proxy = getYtdlpProxy(),
     pluginDirs = process.env.YT_DLP_PLUGIN_DIRS || process.env.YTDLP_PLUGIN_DIRS || '',
     enableBundledBgutilPlugin = process.env.YT_DLP_ENABLE_BGUTIL_PLUGIN,
+    dataSyncId = process.env.YT_DATA_SYNC_ID,
     getUrl = false,
     outputToStdout = false,
   } = options;
@@ -99,6 +100,7 @@ export function buildYtdlpArgs(videoId, options = {}) {
   const extractorParts = [`player_client=${playerClient}`];
   if (skipWebpage) extractorParts.push(`player_skip=${skipWebpage}`);
   if (fetchPot) extractorParts.push(`fetch_pot=${fetchPot}`);
+  if (dataSyncId) extractorParts.push(`data_sync_id=${dataSyncId}`);
   args.push('--extractor-args', `youtube:${extractorParts.join(';')}`);
 
   // Optional override for bgutil POT provider base URL
@@ -129,6 +131,8 @@ function isNonRetryableYtdlpError(stderr = '') {
     msg.includes('please sign in') ||
     msg.includes('account has been terminated') ||
     msg.includes('private video') ||
+    msg.includes('missing required data sync id') ||
+    msg.includes('unable to fetch gvs po token') ||
     // Typical for embeds / restricted playback contexts
     msg.includes('watch video on youtube') ||
     msg.includes('error code: 152')
