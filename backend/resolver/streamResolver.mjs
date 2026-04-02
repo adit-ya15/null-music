@@ -21,7 +21,7 @@ const FALLBACK_TIMEOUT_MS = Math.max(
   500,
   Number(process.env.YTDLP_TIMEOUT_MS || process.env.YTDLP_TIMEOUT || 20000)
 );
-const YTDLP_CLIENTS = String(process.env.YT_DLP_FALLBACK_CLIENTS || 'tv,mweb,web_embedded')
+const YTDLP_CLIENTS = String(process.env.YT_DLP_FALLBACK_CLIENTS || 'android,ios,mweb')
   .split(',')
   .map((value) => value.trim())
   .filter(Boolean);

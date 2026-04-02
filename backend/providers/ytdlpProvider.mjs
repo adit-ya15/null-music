@@ -62,7 +62,7 @@ export function buildYtdlpArgs(videoId, options = {}) {
     extractorArgs = process.env.YT_EXTRACTOR_ARGS || '',
     format = process.env.YT_DLP_FORMAT || 'bestaudio',
     sourceAddress = process.env.YT_SOURCE_ADDRESS,
-    playerClient = process.env.YT_PLAYER_CLIENTS || 'tv',
+    playerClient = process.env.YT_PLAYER_CLIENTS || 'android',
     cookiesFile = process.env.YT_COOKIES_FILE,
     jsRuntimes = process.env.YT_DLP_JS_RUNTIMES || 'node',
     proxy = getYtdlpProxy(),
@@ -95,7 +95,7 @@ export function buildYtdlpArgs(videoId, options = {}) {
 
   // Prefer mweb with webpage/config skipping to reduce 429s on datacenter IPs.
   const skipWebpage = process.env.YT_PLAYER_SKIP || 'webpage,configs';
-  const fetchPot = String(process.env.YT_FETCH_POT || 'auto').trim();
+  const fetchPot = String(process.env.YT_FETCH_POT || 'never').trim();
   const extractorParts = [`player_client=${playerClient}`];
   if (skipWebpage) extractorParts.push(`player_skip=${skipWebpage}`);
   if (fetchPot) extractorParts.push(`fetch_pot=${fetchPot}`);

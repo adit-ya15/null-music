@@ -182,9 +182,9 @@ export function downloadToCache(videoId, ytdlpBin) {
     args.push('--add-header', 'User-Agent: com.google.android.youtube/19.09.37 (Linux; Android 13)');
     args.push('--add-header', 'Accept-Language: en-US,en;q=0.9');
 
-    const playerClient = process.env.YT_PLAYER_CLIENTS || 'mweb';
+    const playerClient = process.env.YT_PLAYER_CLIENTS || 'android';
     const skipWebpage = process.env.YT_PLAYER_SKIP || 'webpage,configs';
-    const fetchPot = String(process.env.YT_FETCH_POT || 'auto').trim();
+    const fetchPot = String(process.env.YT_FETCH_POT || 'never').trim();
     const extractorParts = [`player_client=${playerClient}`];
     if (skipWebpage) extractorParts.push(`player_skip=${skipWebpage}`);
     if (fetchPot) extractorParts.push(`fetch_pot=${fetchPot}`);

@@ -132,9 +132,9 @@ logger.info("config", "yt-dlp runtime configuration", {
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-// Convenience: if no env var is set, look for a cookies export in the project root.
-// Note: for production, prefer setting an absolute `YT_COOKIES_FILE` path explicitly.
-if (!process.env.YT_COOKIES_FILE) {
+// Optional convenience: only auto-detect cookies when explicitly enabled.
+// This repo includes a sample cookies.txt, and auto-loading it can break yt-dlp playback.
+if (!process.env.YT_COOKIES_FILE && String(process.env.YT_AUTO_DETECT_COOKIES || '').toLowerCase() === 'true') {
     const candidates = [
         path.join(process.cwd(), 'cookies.txt'),
     ];
@@ -950,7 +950,7 @@ async function pipeYtdlpToResponse({ req, res, videoId, contentDisposition = "" 
         });
 
         const first = await pipeAttempt({
-            playerClient: "mweb",
+            playerClient: "android",
             format: "bestaudio[ext=m4a]/bestaudio[acodec*=mp4a]/bestaudio[ext=mp4]/bestaudio",
             contentType: "audio/mp4",
         });
@@ -960,7 +960,7 @@ async function pipeYtdlpToResponse({ req, res, videoId, contentDisposition = "" 
         }
 
         const second = await pipeAttempt({
-            playerClient: "tv",
+            playerClient: "ios",
             format: "bestaudio[ext=m4a]/bestaudio[acodec*=mp4a]/bestaudio[ext=mp4]/bestaudio",
             contentType: "audio/mp4",
         });
