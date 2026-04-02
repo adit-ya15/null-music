@@ -83,7 +83,7 @@ export function buildYtdlpArgs(videoId, options = {}) {
 
   const allowBundled = String(enableBundledBgutilPlugin || '').trim().toLowerCase() !== 'false';
   const bundledBgutil = allowBundled ? getBundledBgutilPluginDir() : null;
-  if (bundledBgutil) args.push('--plugin-dirs', bundledBgutil);
+  if (bundledBgutil && false) args.push('--plugin-dirs', bundledBgutil);
 
   // JavaScript runtime MUST be specified for modern YouTube extraction
   if (jsRuntimes) args.push('--js-runtimes', jsRuntimes);
@@ -100,7 +100,6 @@ export function buildYtdlpArgs(videoId, options = {}) {
   const skipWebpage = String(process.env.YT_PLAYER_SKIP || '').trim();
   const fetchPot = String(process.env.YT_FETCH_POT || 'never').trim();
   const extractorParts = [];
-  if (playerClient && playerClient !== 'default') extractorParts.push(`player_client=${playerClient}`);
   if (skipWebpage) extractorParts.push(`player_skip=${skipWebpage}`);
   if (fetchPot && fetchPot !== 'never') extractorParts.push(`fetch_pot=${fetchPot}`);
   if (dataSyncId) extractorParts.push(`data_sync_id=${dataSyncId}`);
