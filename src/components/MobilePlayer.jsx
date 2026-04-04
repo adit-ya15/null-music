@@ -136,13 +136,22 @@ export default function MobilePlayer({ onOpenLyrics, onOpenQueue, onOpenEqualize
     ? dominantColor
     : 'rgba(15,15,19,1)';
   const glowColorStrong = safeDominantColor.replace('rgb', 'rgba').replace(')', ', 0.55)');
+  const sourceName = currentTrack.source === 'youtube'
+    ? 'YouTube'
+    : currentTrack.source === 'monochrome'
+      ? 'Monochrome'
+      : currentTrack.source === 'jamendo'
+        ? 'Jamendo'
+        : currentTrack.source === 'downloaded'
+          ? 'Offline'
+          : 'Source';
   const RepeatIcon = repeatMode === 'one' ? Repeat1 : Repeat;
 
   return (
     <div className="mobile-player-wrapper" aria-live="polite">
       {/* ─── Mini Player ────────────────────────── */}
       <div
-        className={`mobile-mini-player ${isExpanded ? 'hidden' : ''}`}
+        className={`mobile-mini-player ${isExpanded ? 'hidden' : ''} ${isPlaying ? 'mobile-mini-player--playing' : ''}`}
         onClick={() => setIsExpanded(true)}
         role="button"
         tabIndex={0}
@@ -161,7 +170,7 @@ export default function MobilePlayer({ onOpenLyrics, onOpenQueue, onOpenEqualize
           <img src={coverArt} alt="" className="mini-cover" onError={handleImageError} />
           <div className="mini-info">
             <div className="mini-title">{currentTrack.title}</div>
-            <div className="mini-artist">{currentTrack.artist}</div>
+            <div className="mini-artist">{currentTrack.artist} <span className="mini-source-dot" /> {sourceName}</div>
             {playbackError ? (
               <div className="mini-error error-text" role="status" aria-live="polite">{playbackError}</div>
             ) : null}
@@ -198,7 +207,7 @@ export default function MobilePlayer({ onOpenLyrics, onOpenQueue, onOpenEqualize
             </button>
             <div className="fp-header-center">
               <span className="fp-playing-from">PLAYING FROM</span>
-              <span className="fp-source-name">{currentTrack.source === 'youtube' ? 'YouTube Music' : 'Saavn'}</span>
+              <span className="fp-source-name">{sourceName}</span>
             </div>
             <button className="fp-header-btn" onClick={() => { setIsExpanded(false); onOpenQueue(); }} aria-label="Queue" type="button">
               <ListMusic size={20} />
@@ -206,8 +215,9 @@ export default function MobilePlayer({ onOpenLyrics, onOpenQueue, onOpenEqualize
           </div>
 
           {/* Artwork */}
-          <div className="fp-art-wrapper">
+          <div className={`fp-art-wrapper ${isPlaying ? 'fp-art-wrapper--live' : ''}`}>
             <div className="fp-art-glow" style={{ background: glowColorStrong }} />
+            <div className="fp-live-rings" aria-hidden="true"><span /><span /><span /></div>
             <img
               ref={artRef}
               src={coverArt}

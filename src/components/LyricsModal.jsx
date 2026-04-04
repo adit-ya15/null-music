@@ -5,11 +5,19 @@ import { usePlayer } from '../context/PlayerContext';
 import { getActiveLyricIndex, parseSyncedLyrics } from '../utils/lyrics';
 
 const LyricsModal = ({ isOpen, onClose }) => {
-  const { currentTrack, progress } = usePlayer();
+  const { currentTrack, progress, duration, seekTo } = usePlayer();
   const [lyrics, setLyrics] = useState({ plainLyrics: '', syncedLyrics: '', source: 'none' });
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState(null);
+  const [autoFollow, setAutoFollow] = useState(true);
   const activeLineRef = useRef(null);
+
+  const formatLyricTime = useCallback((seconds = 0) => {
+    const safe = Math.max(0, Math.floor(Number(seconds) || 0));
+    const mins = Math.floor(safe / 60);
+    const secs = safe % 60;
+    return `${mins}:${secs.toString().padStart(2, '0')}`;
+  }, []);
 
   const loadLyrics = useCallback(async () => {
     if (!isOpen || !currentTrack) return;
@@ -65,12 +73,19 @@ const LyricsModal = ({ isOpen, onClose }) => {
 
   const syncedLines = useMemo(() => parseSyncedLyrics(lyrics.syncedLyrics), [lyrics.syncedLyrics]);
   const activeIndex = useMemo(() => getActiveLyricIndex(syncedLines, progress), [progress, syncedLines]);
+  const lyricProgressPercent = useMemo(() => {
+    if (!syncedLines.length) return 0;
+    if (activeIndex < 0) return 0;
+    return Math.min(100, Math.round(((activeIndex + 1) / syncedLines.length) * 100));
+  }, [activeIndex, syncedLines]);
+  const activeLine = activeIndex >= 0 ? syncedLines[activeIndex] : null;
+  const nextLine = activeIndex >= 0 && activeIndex + 1 < syncedLines.length ? syncedLines[activeIndex + 1] : null;
 
   useEffect(() => {
-    if (activeLineRef.current) {
+    if (autoFollow && activeLineRef.current) {
       activeLineRef.current.scrollIntoView({ block: 'center', behavior: 'smooth' });
     }
-  }, [activeIndex]);
+  }, [activeIndex, autoFollow]);
 
   if (!isOpen) return null;
 
@@ -84,7 +99,13 @@ const LyricsModal = ({ isOpen, onClose }) => {
         aria-labelledby="lyrics-title"
       >
         <div className="modal-header">
-          <h2 id="lyrics-title">Lyrics - {currentTrack?.title}</h2>
+          <div className="lyrics-headline">
+            <h2 id="lyrics-title">Lyrics - {currentTrack?.title}</h2>
+            <div className="lyrics-subline">
+              <span>{currentTrack?.artist || 'Unknown Artist'}</span>
+              <span className="lyrics-source-pill">{lyrics.source || 'none'}</span>
+            </div>
+          </div>
           <button className="close-btn" onClick={onClose} aria-label="Close lyrics" type="button">
             &times;
           </button>
@@ -100,19 +121,50 @@ const LyricsModal = ({ isOpen, onClose }) => {
               </button>
             </div>
           ) : syncedLines.length > 0 ? (
-            <div className="lyrics-synced" role="log" aria-live="polite">
+            <>
+              <div className="lyrics-sync-toolbar">
+                <button
+                  type="button"
+                  className={`lyrics-follow-btn ${autoFollow ? 'lyrics-follow-btn--on' : ''}`}
+                  onClick={() => setAutoFollow((value) => !value)}
+                >
+                  {autoFollow ? 'Auto-follow on' : 'Auto-follow off'}
+                </button>
+                <div className="lyrics-progress-strip" aria-hidden="true">
+                  <span style={{ width: `${lyricProgressPercent}%` }} />
+                </div>
+                <span className="lyrics-progress-label">{lyricProgressPercent}%</span>
+              </div>
+              {(activeLine || nextLine) && (
+                <div className="lyrics-now-next" role="status" aria-live="polite">
+                  <p className="lyrics-now-line">
+                    {activeLine ? activeLine.text : 'Waiting for first synced line...'}
+                  </p>
+                  {nextLine && (
+                    <p className="lyrics-next-line">Next: {nextLine.text}</p>
+                  )}
+                </div>
+              )}
+              <div className="lyrics-synced" role="log" aria-live="polite">
               {syncedLines.map((line, index) => (
-                <p
+                <button
                   key={`${line.time}-${index}`}
                   ref={index === activeIndex ? activeLineRef : null}
                   className={`lyrics-line ${index === activeIndex ? 'lyrics-line--active' : ''}`}
+                  onClick={() => seekTo(line.time)}
+                  type="button"
                 >
-                  {line.text}
-                </p>
+                  <span className="lyrics-line-time">{formatLyricTime(line.time)}</span>
+                  <span className="lyrics-line-text">{line.text}</span>
+                </button>
               ))}
-            </div>
+              </div>
+            </>
           ) : (
             <pre className="lyrics-text">{lyrics.plainLyrics || 'No lyrics found for this track.'}</pre>
+          )}
+          {duration > 0 && (
+            <div className="lyrics-footer-time">{formatLyricTime(progress)} / {formatLyricTime(duration)}</div>
           )}
         </div>
       </div>
