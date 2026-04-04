@@ -2,6 +2,52 @@ import play from 'play-dl';
 import { logger } from '../lib/logger.mjs';
 import { pickBestTrackMatch, scoreTrackCandidate } from '../../shared/trackMatch.js';
 
+let soundcloudInitialized = false;
+
+async function ensureSoundcloudClientReady() {
+    if (soundcloudInitialized) return;
+
+    const clientId = await play.getFreeClientID();
+    if (clientId) {
+        await play.setToken({ soundcloud: { client_id: clientId } });
+    }
+    soundcloudInitialized = true;
+}
+
+function normalizeSoundcloudTrack(track) {
+    if (!track) return null;
+
+    const id = String(track.id || track.track_id || '').trim();
+    const title = String(track.name || track.title || 'Unknown Title').trim();
+    const artist = String(
+        track?.user?.name ||
+        track?.user?.username ||
+        track?.channel?.name ||
+        'Unknown Artist'
+    ).trim();
+    const coverArt = String(
+        track?.thumbnail ||
+        track?.image?.url ||
+        track?.user?.avatarURL ||
+        ''
+    ).trim();
+    const duration = Number(track.durationInSec || track.duration || 0);
+    const permalinkUrl = String(track.url || track.permalink || '').trim();
+
+    return {
+        id: id ? `sc-${id}` : `sc-${Buffer.from(`${title}:${artist}`).toString('base64').slice(0, 12)}`,
+        originalId: id || '',
+        title,
+        artist,
+        album: '',
+        coverArt,
+        duration: Number.isFinite(duration) ? Math.max(0, Math.round(duration)) : 0,
+        source: 'soundcloud',
+        streamUrl: null,
+        permalinkUrl,
+    };
+}
+
 /**
  * Validates a SoundCloud URL and ensures it's playable.
  * Used internally by the provider.
@@ -16,6 +62,43 @@ async function getSoundcloudStreamUrl(scUrl) {
         logger.debug('soundcloud', `Failed to extract stream from ${scUrl}`, { error: err.message });
     }
     return null;
+}
+
+export async function soundcloudSearchTracks(query, { limit = 10 } = {}) {
+    const term = String(query || '').trim();
+    if (!term) return [];
+
+    try {
+        await ensureSoundcloudClientReady();
+
+        const results = await play.search(term, {
+            source: { soundcloud: 'tracks' },
+            limit: Math.max(1, Math.min(Number(limit) || 10, 25)),
+        });
+
+        if (!Array.isArray(results) || results.length === 0) {
+            return [];
+        }
+
+        return results
+            .map((track) => normalizeSoundcloudTrack(track))
+            .filter(Boolean);
+    } catch (err) {
+        logger.warn('soundcloud', 'SoundCloud search failed', { query: term, error: err?.message });
+        return [];
+    }
+}
+
+export async function soundcloudResolveByUrl(url) {
+    const scUrl = String(url || '').trim();
+    if (!scUrl) return null;
+
+    try {
+        await ensureSoundcloudClientReady();
+        return await getSoundcloudStreamUrl(scUrl);
+    } catch {
+        return null;
+    }
 }
 
 /**
@@ -33,9 +116,7 @@ export async function soundcloudGetAudioUrl(videoId, title, artist) {
     if (!query) return null;
 
     try {
-        // Fix for play-dl not automatically initializing the SoundCloud client_id
-        const clientId = await play.getFreeClientID();
-        if (clientId) await play.setToken({ soundcloud: { client_id: clientId } });
+        await ensureSoundcloudClientReady();
 
         // Search SoundCloud for top 5 tracks
         const results = await play.search(query, {

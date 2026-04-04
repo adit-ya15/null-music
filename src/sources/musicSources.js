@@ -1,11 +1,11 @@
-import { resolveMonochromeStream } from './monochromeSource';
+import { resolveMonochromeStream } from './monochromeSource.js';
 
 function normalizeVideoId(track) {
   const raw = track?.videoId || track?.id || '';
   return String(raw).replace(/^yt-/, '').trim();
 }
 
-export function createMusicSources({ youtubeApi }) {
+export function createMusicSources({ youtubeApi, soundcloudApi }) {
   const youtubeSource = {
     id: 'youtube',
     async search(query, limit = 20) {
@@ -22,13 +22,30 @@ export function createMusicSources({ youtubeApi }) {
 
       const details = await youtubeApi.getStreamDetails(videoId, { preferDirect: true });
       const streamUrl = typeof details?.streamUrl === 'string' ? details.streamUrl.trim() : '';
-      if (!streamUrl) return null;
+      if (streamUrl) {
+        return {
+          streamUrl,
+          streamSource: details?.streamSource || 'youtube-direct',
+          cacheState: details?.cacheState || null,
+        };
+      }
 
-      return {
-        streamUrl,
-        streamSource: details?.streamSource || 'youtube-direct',
-        cacheState: details?.cacheState || null,
-      };
+      if (soundcloudApi) {
+        const sc = await soundcloudApi.resolveStreamSafe({
+          title: track?.title,
+          artist: track?.artist,
+          trackId: videoId,
+        });
+        if (sc.ok && sc.data?.streamUrl) {
+          return {
+            streamUrl: sc.data.streamUrl,
+            streamSource: sc.data.streamSource || 'soundcloud',
+            cacheState: null,
+          };
+        }
+      }
+
+      return null;
     },
   };
 
@@ -56,6 +73,16 @@ export function createMusicSources({ youtubeApi }) {
         streamUrl,
         streamSource: 'soundcloud',
       };
+    },
+    async resolveTrack(track) {
+      if (!soundcloudApi) return null;
+      return soundcloudApi.resolveStreamSafe({
+        permalinkUrl: track?.permalinkUrl,
+        url: track?.url,
+        title: track?.title,
+        artist: track?.artist,
+        trackId: normalizeVideoId(track),
+      });
     },
   };
 

@@ -20,7 +20,9 @@ const getUrlKind = (url = '', source = '') => {
   if (!url) return 'missing';
   if (url.startsWith('file:')) return 'local-file';
   if (url.includes('/api/yt/cache/')) return 'disk-cache';
-  if (url.includes('/api/yt/pipe/')) return 'pipe-proxy';
+  if (source === 'monochrome') return 'monochrome';
+  if (source === 'soundcloud') return 'soundcloud';
+  if (source === 'yt-dlp') return 'yt-dlp';
   if (source === 'downloaded') return 'downloaded';
   return 'remote';
 };

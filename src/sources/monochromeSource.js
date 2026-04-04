@@ -1,4 +1,4 @@
-import { logInfo } from '../utils/logger';
+import { logInfo } from '../utils/logger.js';
 
 const DEFAULT_TIMEOUT_MS = 6500;
 const MAX_CANDIDATES = 12;
@@ -118,7 +118,8 @@ async function verifyStreamUrl(streamUrl, timeoutMs = 5000) {
 }
 
 function buildCandidates(videoId, endpointsCsv) {
-  const rawEndpoints = splitCsv(endpointsCsv || import.meta.env.VITE_MONOCHROME_ENDPOINTS || '');
+  const envEndpoints = import.meta?.env?.VITE_MONOCHROME_ENDPOINTS || '';
+  const rawEndpoints = splitCsv(endpointsCsv || envEndpoints || '');
 
   const candidates = [];
   for (const endpoint of rawEndpoints) {

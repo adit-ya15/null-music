@@ -14,8 +14,20 @@ export default function TrackCard({
   if (!track) return null;
 
   const coverUrl = track.coverArt || '';
-  const sourceLabel = track.source === 'saavn' ? 'SV' : track.source === 'downloaded' ? 'DL' : 'YT';
-  const sourceClass = track.source === 'saavn' ? 'badge-sv' : track.source === 'downloaded' ? 'badge-dl' : 'badge-yt';
+  const sourceLabel = track.source === 'saavn'
+    ? 'SV'
+    : track.source === 'soundcloud'
+      ? 'SC'
+      : track.source === 'downloaded'
+        ? 'DL'
+        : 'YT';
+  const sourceClass = track.source === 'saavn'
+    ? 'badge-sv'
+    : track.source === 'soundcloud'
+      ? 'badge-sv'
+      : track.source === 'downloaded'
+        ? 'badge-dl'
+        : 'badge-yt';
   const savedLabel = track.source === 'downloaded' ? 'Offline' : isDownloaded ? 'Saved' : null;
 
   if (variant === 'tile') {

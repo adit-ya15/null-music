@@ -26,6 +26,7 @@ import { recordTrackIssue } from "./backend/feedback/issueStore.mjs";
 
 import { resolveStreamUrl, resolveStreamWithMeta } from "./backend/resolver/streamResolver.mjs";
 import { downloadToCache, getCachedFilePath, getCacheStatus } from "./backend/cache/audioCache.mjs";
+import { soundcloudGetAudioUrl, soundcloudResolveByUrl, soundcloudSearchTracks } from "./backend/providers/soundcloudProvider.mjs";
 import { ytdlpQueue } from "./backend/queue/ytdlpQueue.mjs";
 import { buildYtdlpArgs, getYtdlpProxy } from "./backend/providers/ytdlpProvider.mjs";
 import { spawnWithTimeout } from "./backend/lib/spawnWithTimeout.mjs";
@@ -482,6 +483,50 @@ app.get("/api/yt/search", async (req, res) => {
     } catch (err) {
         console.error("Search error:", err.message);
         res.status(500).json({ results: [] });
+    }
+});
+
+app.get("/api/soundcloud/search", async (req, res) => {
+    const query = String(req.query?.query || "").trim();
+    const limit = Math.max(1, Math.min(Number(req.query?.limit || 10), 25));
+
+    if (!query) return res.json({ results: [] });
+
+    try {
+        const results = await soundcloudSearchTracks(query, { limit });
+        return res.json({ results });
+    } catch (error) {
+        logger.warn("soundcloud", "Search endpoint failed", { query, error: error?.message });
+        return res.status(500).json({ results: [] });
+    }
+});
+
+app.post("/api/soundcloud/resolve", async (req, res) => {
+    try {
+        const { permalinkUrl, url, title, artist, trackId } = req.body || {};
+        const candidateUrl = String(permalinkUrl || url || "").trim();
+
+        let streamUrl = null;
+        if (candidateUrl) {
+            streamUrl = await soundcloudResolveByUrl(candidateUrl);
+        }
+
+        if (!streamUrl && title) {
+            streamUrl = await soundcloudGetAudioUrl(String(trackId || "").trim(), String(title || ""), String(artist || ""));
+        }
+
+        if (!streamUrl) {
+            return res.status(404).json({ ok: false, error: "SoundCloud stream unavailable" });
+        }
+
+        return res.json({
+            ok: true,
+            streamUrl,
+            streamSource: "soundcloud",
+        });
+    } catch (error) {
+        logger.warn("soundcloud", "Resolve endpoint failed", { error: error?.message });
+        return res.status(500).json({ ok: false, error: "SoundCloud resolve failed" });
     }
 });
 

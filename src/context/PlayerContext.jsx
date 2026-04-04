@@ -13,6 +13,7 @@ import { Capacitor } from '@capacitor/core';
 
 import { nativeMediaApi } from "../api/nativeMedia";
 import { youtubeApi } from "../api/youtube";
+import { soundcloudApi } from "../api/soundcloud";
 import { recommendationsApi } from "../api/recommendations";
 import { getOrCreateUserId } from "../utils/userId";
 import { createMusicSources } from "../sources/musicSources";
@@ -103,7 +104,7 @@ export const usePlayer = () => useContext(PlayerContext);
 
 export const PlayerProvider = ({ children }) => {
 
-  const musicSources = useRef(createMusicSources({ youtubeApi })).current;
+  const musicSources = useRef(createMusicSources({ youtubeApi, soundcloudApi })).current;
 
   const [currentTrack, setCurrentTrack] = useState(null);
   const [isPlaying, setIsPlaying] = useState(false);
@@ -349,6 +350,32 @@ export const PlayerProvider = ({ children }) => {
     }
 
     if (track.source !== "youtube") {
+      if (track.source === 'soundcloud') {
+        const resolvedSoundcloud = await musicSources.soundcloud.resolveTrack(track);
+        const resolvedStream = resolvedSoundcloud?.ok ? resolvedSoundcloud.data?.streamUrl : null;
+        if (!resolvedStream && !existingUrl) {
+          throw new Error(resolvedSoundcloud?.error || 'SoundCloud stream unavailable');
+        }
+
+        const resolved = mergeResolvedTrack(track, {
+          streamUrl: resolvedStream || existingUrl,
+          streamSource: resolvedSoundcloud?.data?.streamSource || track.streamSource || 'soundcloud',
+          streamResolvedAt: Date.now(),
+        });
+        if (record) {
+          recordReliabilityEvent('resolved', {
+            trackId: track.id,
+            title: track.title,
+            streamSource: resolved.streamSource || 'soundcloud',
+            cacheState: null,
+            reason,
+            refreshed: forceRefresh,
+            urlKind: 'remote',
+          });
+        }
+        return resolved;
+      }
+
       if (!existingUrl) throw new Error("Stream unavailable");
       const resolved = mergeResolvedTrack(track, {
         streamUrl: existingUrl,
@@ -403,7 +430,7 @@ export const PlayerProvider = ({ children }) => {
       }
     }
     return resolved;
-  }, [getResolvedTrackFromCache, mergeResolvedTrack, musicSources.youtube, offlineOnlyMode, recordReliabilityEvent]);
+  }, [getResolvedTrackFromCache, mergeResolvedTrack, musicSources.soundcloud, musicSources.youtube, offlineOnlyMode, recordReliabilityEvent]);
 
   /** Pre-resolve stream URL for a track (used for gapless preloading). */
   const preResolveStream = useCallback(async (track) => {
