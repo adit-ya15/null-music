@@ -1,11 +1,20 @@
 import React from 'react';
 import { usePlayer } from '../context/PlayerContext';
-import { Play, X, Trash2 } from 'lucide-react';
+import { Play, X, Trash2, ArrowUp, ArrowDown, Sparkles } from 'lucide-react';
 
 const FALLBACK_COVER = 'https://placehold.co/120x120/27272a/71717a?text=%E2%99%AA';
 
 export default function QueueViewer({ isOpen, onClose }) {
-  const { queue, queueIndex, playTrack, isPlaying, removeFromQueue, clearQueue } = usePlayer();
+  const {
+    queue,
+    queueIndex,
+    playTrack,
+    isPlaying,
+    removeFromQueue,
+    clearQueue,
+    moveQueueItem,
+    dedupeQueue,
+  } = usePlayer();
 
   if (!isOpen) return null;
 
@@ -16,6 +25,11 @@ export default function QueueViewer({ isOpen, onClose }) {
         <div className="queue-header">
           <h2 id="queue-title">Up Next</h2>
           <div className="queue-header-actions">
+            {queue.length > 2 && (
+              <button className="queue-clear-btn" onClick={dedupeQueue} aria-label="Remove duplicate tracks" title="Remove duplicates" type="button">
+                <Sparkles size={16} />
+              </button>
+            )}
             {queue.length > 1 && (
               <button className="queue-clear-btn" onClick={clearQueue} aria-label="Clear queue" title="Clear queue" type="button">
                 <Trash2 size={16} />
@@ -76,15 +90,37 @@ export default function QueueViewer({ isOpen, onClose }) {
                     </div>
                   </button>
                   {!isActive && (
-                    <button
-                      className="queue-remove-btn"
-                      onClick={() => removeFromQueue(i)}
-                      aria-label={`Remove ${track.title} from queue`}
-                      title="Remove from queue"
-                      type="button"
-                    >
-                      <X size={14} />
-                    </button>
+                    <div className="queue-actions-group">
+                      <button
+                        className="queue-remove-btn"
+                        onClick={() => moveQueueItem(i, 'up')}
+                        aria-label={`Move ${track.title} up in queue`}
+                        title="Move up"
+                        disabled={i === 0}
+                        type="button"
+                      >
+                        <ArrowUp size={14} />
+                      </button>
+                      <button
+                        className="queue-remove-btn"
+                        onClick={() => moveQueueItem(i, 'down')}
+                        aria-label={`Move ${track.title} down in queue`}
+                        title="Move down"
+                        disabled={i === queue.length - 1}
+                        type="button"
+                      >
+                        <ArrowDown size={14} />
+                      </button>
+                      <button
+                        className="queue-remove-btn"
+                        onClick={() => removeFromQueue(i)}
+                        aria-label={`Remove ${track.title} from queue`}
+                        title="Remove from queue"
+                        type="button"
+                      >
+                        <X size={14} />
+                      </button>
+                    </div>
                   )}
                 </div>
               );

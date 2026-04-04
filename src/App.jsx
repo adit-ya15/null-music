@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { Capacitor } from '@capacitor/core';
-import { Play, User, Shuffle, ListPlus, Sun, Moon, ChevronRight, Heart, Clock, Music, ListMusic, Disc3, Sparkles, SkipForward, Download, Upload, Settings, ShieldCheck, Mail, WifiOff, Trash2, Pencil, ArrowUp, ArrowDown, AlertCircle, X } from 'lucide-react';
+import { Play, User, Shuffle, ListPlus, Sun, Moon, ChevronRight, Heart, Clock, Music, ListMusic, Disc3, Sparkles, SkipForward, Download, Upload, Settings, ShieldCheck, Mail, WifiOff, Trash2, Pencil, ArrowUp, ArrowDown, AlertCircle, X, RefreshCw, Copy } from 'lucide-react';
 import { usePlayer } from './context/PlayerContext';
 import { youtubeApi } from './api/youtube';
 import { jamendoApi } from './api/jamendo';
@@ -8,6 +8,7 @@ import { nativeMediaApi } from './api/nativeMedia';
 import { recommendationsApi } from './api/recommendations';
 import { authApi } from './api/auth';
 import { feedbackApi } from './api/feedback';
+import { buildApiUrl } from './api/apiBase';
 import { useLocalStorage } from './hooks/useLocalStorage';
 import { buildHistory, insertTrackNext } from './utils/playerState';
 import { getOrCreateUserId } from './utils/userId';
@@ -112,6 +113,15 @@ const getDownloadStatusLabel = (job) => {
   if (job.status === 'failed') return 'Failed';
   return 'Saved';
 };
+const prettifyHealth = (value) => (value ? 'Ready' : 'Needs attention');
+const toFriendlyPlaybackHint = (message = '') => {
+  const text = String(message || '').trim();
+  if (!text) return '';
+  if (/offline-only/i.test(text)) return 'Offline-only mode is on. Play a downloaded track or disable offline-only mode.';
+  if (/stream unavailable/i.test(text)) return 'No stream was available. Try replaying or choosing another source.';
+  if (/network|fetch|timeout/i.test(text)) return 'Network looks unstable. The app will keep trying alternate sources.';
+  return text;
+};
 
 /* ── Radio station definitions ── */
 const RADIO_STATIONS = [
@@ -155,6 +165,8 @@ function App() {
     toggleAutoRadio,
     playbackProfile,
     offlineOnlyMode,
+    playbackError,
+    reliabilityDebug,
     setPlaybackProfile,
     toggleOfflineOnlyMode,
     resumeState,
@@ -218,6 +230,7 @@ function App() {
   const [isLibrarySyncing, setIsLibrarySyncing] = useState(false);
   const [librarySyncMessage, setLibrarySyncMessage] = useState('');
   const [smartDownloadsEnabled, setSmartDownloadsEnabled] = useLocalStorage('aura-smart-downloads', false);
+  const [hasCompletedReadinessCheck, setHasCompletedReadinessCheck] = useLocalStorage('aura-readiness-check-complete', false);
   const [issueReportState, setIssueReportState] = useState({
     open: false,
     track: null,
@@ -227,6 +240,19 @@ function App() {
     error: '',
     success: '',
   });
+  const [readinessCheck, setReadinessCheck] = useState({
+    isRunning: false,
+    checkedAt: 0,
+    checks: {
+      online: false,
+      backend: false,
+      ytResolver: false,
+      auth: false,
+      downloads: true,
+    },
+    notes: [],
+  });
+  const [playbackHint, setPlaybackHint] = useState('');
   const platformLabel = Capacitor.isNativePlatform() ? 'Android app' : 'Web preview';
   const libraryImportInputRef = useRef(null);
 
@@ -463,6 +489,47 @@ function App() {
     };
   }, [history]);
 
+  const sourceHealth = useMemo(() => {
+    const rows = {};
+    const events = Array.isArray(reliabilityDebug?.events) ? reliabilityDebug.events : [];
+    events.forEach((event) => {
+      const source = event.streamSource || event.reason || 'unknown';
+      if (!rows[source]) {
+        rows[source] = { source, resolved: 0, fallback: 0, errors: 0 };
+      }
+      if (event.kind === 'resolved') rows[source].resolved += 1;
+      if (event.kind === 'fallback') rows[source].fallback += 1;
+      if (event.kind === 'error') rows[source].errors += 1;
+    });
+    return Object.values(rows).sort((a, b) => (b.resolved - b.errors) - (a.resolved - a.errors)).slice(0, 5);
+  }, [reliabilityDebug?.events]);
+
+  const diagnosticsSnapshot = useMemo(() => {
+    const fallback = reliabilityDebug?.lastFallback || null;
+    const resolved = reliabilityDebug?.lastResolved || null;
+    return {
+      createdAt: new Date().toISOString(),
+      platform: platformLabel,
+      online: !isOffline,
+      playbackProfile,
+      offlineOnlyMode,
+      currentTrack: currentTrack
+        ? {
+          id: currentTrack.id,
+          title: currentTrack.title,
+          artist: currentTrack.artist,
+          source: currentTrack.source,
+          streamSource: currentTrack.streamSource,
+          cacheState: currentTrack.cacheState,
+        }
+        : null,
+      playbackError: playbackError || null,
+      lastResolved: resolved,
+      lastFallback: fallback,
+      readiness: readinessCheck,
+    };
+  }, [currentTrack, isOffline, offlineOnlyMode, platformLabel, playbackError, playbackProfile, readinessCheck, reliabilityDebug?.lastFallback, reliabilityDebug?.lastResolved]);
+
   const loadDownloads = useCallback(async () => {
     try {
       const result = await nativeMediaApi.getDownloadedTracks();
@@ -491,6 +558,7 @@ function App() {
               ...(prev[event.id] || {}),
               id: event.id,
               title: event.title || prev[event.id]?.title || 'Downloading track',
+              track: prev[event.id]?.track || null,
               progress: Number(event.progress || 0),
               status: event.status || 'downloading',
               message: '',
@@ -520,6 +588,7 @@ function App() {
               ...(prev[event.id] || {}),
               id: event.id,
               title: prev[event.id]?.title || 'Download',
+              track: prev[event.id]?.track || null,
               progress: prev[event.id]?.progress || 0,
               status: nextStatus,
               message: event.message || (nextStatus === 'canceled' ? 'Download canceled.' : 'Download failed.'),
@@ -538,6 +607,91 @@ function App() {
       logError('app.ensureNativeDownloadsReady', error);
     }
   }, [loadDownloads]);
+
+  const runReadinessCheck = useCallback(async () => {
+    const online = !isOffline;
+    const next = {
+      isRunning: true,
+      checkedAt: Date.now(),
+      checks: {
+        online,
+        backend: false,
+        ytResolver: false,
+        auth: !authSession?.token,
+        downloads: !Capacitor.isNativePlatform(),
+      },
+      notes: [],
+    };
+    setReadinessCheck(next);
+
+    const notes = [];
+    const withTimeout = async (task, timeoutMs = 6500) => {
+      const timeout = new Promise((resolve) => setTimeout(() => resolve({ ok: false, timeout: true }), timeoutMs));
+      return Promise.race([task, timeout]);
+    };
+
+    const backendRes = await withTimeout(fetch(buildApiUrl('/health'))
+      .then((response) => ({ ok: response.ok }))
+      .catch(() => ({ ok: false })));
+    next.checks.backend = Boolean(backendRes?.ok);
+    if (!next.checks.backend) notes.push('Backend health endpoint is unreachable.');
+
+    const ytHealthRes = await withTimeout(fetch(buildApiUrl('/yt/health'))
+      .then((response) => ({ ok: response.ok }))
+      .catch(() => ({ ok: false })));
+    next.checks.ytResolver = Boolean(ytHealthRes?.ok);
+    if (!next.checks.ytResolver) notes.push('YouTube resolver health check failed.');
+
+    if (authSession?.token) {
+      const authRes = await authApi.getCurrentUser(authSession.token);
+      next.checks.auth = Boolean(authRes.ok);
+      if (!next.checks.auth) notes.push('Account session looks stale. Signing in again may help.');
+    }
+
+    if (Capacitor.isNativePlatform()) {
+      try {
+        await ensureNativeDownloadsReady();
+        next.checks.downloads = true;
+      } catch {
+        next.checks.downloads = false;
+        notes.push('Native downloads bridge is not ready.');
+      }
+    }
+
+    if (!online) notes.push('You are offline. Downloads and local history will be prioritized.');
+
+    setReadinessCheck({
+      isRunning: false,
+      checkedAt: Date.now(),
+      checks: next.checks,
+      notes,
+    });
+    setHasCompletedReadinessCheck(true);
+  }, [authSession?.token, ensureNativeDownloadsReady, isOffline, setHasCompletedReadinessCheck]);
+
+  const copyDiagnosticsSnapshot = useCallback(async () => {
+    const payload = JSON.stringify(diagnosticsSnapshot, null, 2);
+    try {
+      if (navigator?.clipboard?.writeText) {
+        await navigator.clipboard.writeText(payload);
+      } else {
+        throw new Error('Clipboard unavailable');
+      }
+      setPlaybackHint('Diagnostics copied to clipboard.');
+    } catch {
+      setPlaybackHint('Could not copy diagnostics on this device.');
+    }
+  }, [diagnosticsSnapshot]);
+
+  const attachDiagnosticsToIssue = useCallback(() => {
+    const payload = JSON.stringify(diagnosticsSnapshot, null, 2);
+    setIssueReportState((previous) => ({
+      ...previous,
+      note: `${previous.note || ''}${previous.note ? '\n\n' : ''}---\nDiagnostics\n${payload}`.slice(0, 600),
+      error: '',
+      success: '',
+    }));
+  }, [diagnosticsSnapshot]);
 
   /* ════════════════ History tracking ════════════════ */
   useEffect(() => {
@@ -561,6 +715,29 @@ function App() {
       downloadBridgeReadyRef.current = false;
     };
   }, []);
+
+  useEffect(() => {
+    if (activeTab !== 'library' || librarySubView !== 'settings') return;
+    if (hasCompletedReadinessCheck || readinessCheck.isRunning || readinessCheck.checkedAt) return;
+    void runReadinessCheck();
+  }, [activeTab, hasCompletedReadinessCheck, librarySubView, readinessCheck.checkedAt, readinessCheck.isRunning, runReadinessCheck]);
+
+  useEffect(() => {
+    if (reliabilityDebug?.lastFallback?.at) {
+      const source = reliabilityDebug.lastFallback.streamSource || 'backup source';
+      setPlaybackHint(`Playback recovered via ${source}.`);
+      return;
+    }
+    if (playbackError) {
+      setPlaybackHint(toFriendlyPlaybackHint(playbackError));
+    }
+  }, [playbackError, reliabilityDebug?.lastFallback?.at, reliabilityDebug?.lastFallback?.streamSource]);
+
+  useEffect(() => {
+    if (!playbackHint) return undefined;
+    const timer = setTimeout(() => setPlaybackHint(''), 4200);
+    return () => clearTimeout(timer);
+  }, [playbackHint]);
 
   useEffect(() => {
     const shouldWarmDownloads = Capacitor.isNativePlatform()
@@ -1147,6 +1324,7 @@ function App() {
             ...(prev[downloadId] || {}),
             id: downloadId,
             title: track.title || 'Untitled',
+            track,
             progress: 0,
             status: 'failed',
             message: 'Could not resolve a direct YouTube audio URL for download right now.',
@@ -1171,6 +1349,7 @@ function App() {
           [downloadId]: {
             id: downloadId,
             title: track.title || 'Untitled',
+            track,
             progress: 0,
             status: 'failed',
             message: 'Download URL is not absolute. Rebuild the app with VITE_API_BASE pointing to your backend.',
@@ -1184,6 +1363,7 @@ function App() {
         [downloadId]: {
           id: downloadId,
           title: track.title || 'Untitled',
+          track,
           progress: 0,
           status: 'queued',
           message: '',
@@ -1210,6 +1390,7 @@ function App() {
             ...(prev[downloadId] || {}),
             id: downloadId,
             title: track.title || 'Untitled',
+            track,
             status: /cancel/i.test(message) ? 'canceled' : 'failed',
             message,
           },
@@ -1238,6 +1419,24 @@ function App() {
       toggleIfDownloaded: true,
     });
   }, [contextMenu.track, queueTrackDownload]);
+
+  const handleRetryDownload = useCallback(async (jobId) => {
+    if (!jobId) return;
+    const job = downloadJobs[jobId];
+    if (!job?.track) {
+      setDownloadJobs((prev) => ({
+        ...prev,
+        [jobId]: {
+          ...(prev[jobId] || {}),
+          status: 'failed',
+          message: 'Retry unavailable because the original track context was missing.',
+        },
+      }));
+      return;
+    }
+
+    await queueTrackDownload(job.track, { closeMenu: false, toggleIfDownloaded: false });
+  }, [downloadJobs, queueTrackDownload]);
 
   const handleAddToPlaylist = useCallback((playlistId) => {
     const track = contextMenu.track;
@@ -1800,6 +1999,11 @@ function App() {
                   <button className="download-job-action" onClick={() => handleCancelDownload(job.id)} type="button">
                     Cancel
                   </button>
+                ) : (job.status === 'failed' || job.status === 'canceled') && job.track ? (
+                  <button className="download-job-action" onClick={() => handleRetryDownload(job.id)} type="button">
+                    <RefreshCw size={14} />
+                    Retry
+                  </button>
                 ) : (
                   <button className="download-job-action" onClick={() => handleDismissDownloadJob(job.id)} type="button">
                     <X size={14} />
@@ -2070,6 +2274,70 @@ function App() {
 
       <div className="settings-card">
         <div className="section-header">
+          <h2>First-Run Readiness</h2>
+          <div className="section-header-actions">
+            <button className="section-action-btn" onClick={runReadinessCheck} disabled={readinessCheck.isRunning} type="button">
+              <RefreshCw size={14} className={readinessCheck.isRunning ? 'spin-icon' : ''} />
+              {readinessCheck.isRunning ? 'Checking...' : 'Run checks'}
+            </button>
+            <button className="section-action-btn" onClick={copyDiagnosticsSnapshot} type="button">
+              <Copy size={14} /> Copy report
+            </button>
+          </div>
+        </div>
+        <div className="diagnostic-grid">
+          <div className="diagnostic-tile">
+            <strong>Network</strong>
+            <span>{prettifyHealth(readinessCheck.checks.online)}</span>
+            <small>{readinessCheck.checks.online ? 'Internet connection is active.' : 'You are offline.'}</small>
+          </div>
+          <div className="diagnostic-tile">
+            <strong>Backend</strong>
+            <span>{prettifyHealth(readinessCheck.checks.backend)}</span>
+            <small>{readinessCheck.checks.backend ? 'API health endpoint responded.' : 'Cannot reach backend health endpoint.'}</small>
+          </div>
+          <div className="diagnostic-tile">
+            <strong>YouTube resolver</strong>
+            <span>{prettifyHealth(readinessCheck.checks.ytResolver)}</span>
+            <small>{readinessCheck.checks.ytResolver ? 'Resolver health endpoint responded.' : 'Resolver health probe failed.'}</small>
+          </div>
+          <div className="diagnostic-tile">
+            <strong>Auth session</strong>
+            <span>{prettifyHealth(readinessCheck.checks.auth)}</span>
+            <small>{readinessCheck.checks.auth ? 'Session is usable.' : 'Sign in again to refresh auth.'}</small>
+          </div>
+        </div>
+        {readinessCheck.notes?.length > 0 && (
+          <div className="readiness-notes">
+            {readinessCheck.notes.map((note) => (
+              <p key={note}>{note}</p>
+            ))}
+          </div>
+        )}
+      </div>
+
+      <div className="settings-card">
+        <div className="section-header">
+          <h2>Source Health</h2>
+        </div>
+        {sourceHealth.length > 0 ? (
+          <div className="source-health-list">
+            {sourceHealth.map((row) => (
+              <div key={row.source} className="source-health-row">
+                <strong>{row.source}</strong>
+                <span>{row.resolved} resolved</span>
+                <span>{row.fallback} fallback</span>
+                <span>{row.errors} errors</span>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <p className="settings-row-text">Play a few tracks to populate source health telemetry.</p>
+        )}
+      </div>
+
+      <div className="settings-card">
+        <div className="section-header">
           <h2>Open Source Notes</h2>
         </div>
         <p className="settings-row-text">The repo now includes contributor templates, CI, a privacy note, a roadmap, and release-check docs so the project is easier to maintain in public.</p>
@@ -2122,6 +2390,13 @@ function App() {
               </button>
             </div>
           </header>
+        )}
+
+        {playbackHint && (
+          <div className="playback-hint-banner" role="status" aria-live="polite">
+            <AlertCircle size={14} />
+            <span>{playbackHint}</span>
+          </div>
         )}
 
         <div className="content-scroll">
@@ -2417,6 +2692,9 @@ function App() {
             {issueReportState.error && <p className="auth-error">{issueReportState.error}</p>}
             {issueReportState.success && <p className="auth-muted">{issueReportState.success}</p>}
             <div className="modal-actions">
+              <button className="btn-secondary" onClick={attachDiagnosticsToIssue} type="button">
+                Attach diagnostics
+              </button>
               <button className="btn-secondary" onClick={closeIssueReport} type="button">
                 Close
               </button>
@@ -2448,7 +2726,12 @@ function App() {
               {contextMenu.track.coverArt && <img src={contextMenu.track.coverArt} alt="" style={{ width: 44, height: 44, borderRadius: 8, objectFit: 'cover' }} />}
               <div style={{ overflow: 'hidden' }}>
                 <div style={{ fontWeight: 700, fontSize: 15, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{contextMenu.track.title}</div>
-                <div style={{ fontSize: 13, color: 'var(--text-300)' }}>{contextMenu.track.artist}</div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 2 }}>
+                  <span style={{ fontSize: 13, color: 'var(--text-300)' }}>{contextMenu.track.artist}</span>
+                  <span className={`source-badge source-badge--${(contextMenu.track.streamSource || contextMenu.track.source || 'unknown').replace(/[^a-z0-9-]/gi, '').toLowerCase()}`}>
+                    {contextMenu.track.streamSource || contextMenu.track.source || 'unknown'}
+                  </span>
+                </div>
               </div>
             </div>
 

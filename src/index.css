@@ -986,6 +986,20 @@ button { border: none; background: transparent; cursor: pointer; font-family: in
     transition: all var(--transition-fast);
 }
 
+.playback-hint-banner {
+    margin: 8px 16px 0;
+    border-radius: var(--radius-full);
+    border: 1px solid rgba(252, 60, 68, 0.25);
+    background: rgba(252, 60, 68, 0.12);
+    color: var(--text-100);
+    padding: 8px 12px;
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 12px;
+    font-weight: 600;
+}
+
 .download-job-action:hover,
 .download-row-action:hover {
     background: var(--surface-300);
@@ -1178,6 +1192,81 @@ button { border: none; background: transparent; cursor: pointer; font-family: in
     border-radius: var(--radius-md);
     background: var(--surface-200);
     border: 1px solid var(--divider);
+}
+
+.readiness-notes {
+    margin-top: 12px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.readiness-notes p {
+    font-size: 12px;
+    color: var(--text-200);
+    border: 1px solid var(--divider);
+    background: var(--surface-200);
+    border-radius: var(--radius-md);
+    padding: 10px 12px;
+}
+
+.source-health-list {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.source-health-row {
+    display: grid;
+    grid-template-columns: minmax(0, 1.4fr) repeat(3, minmax(0, 1fr));
+    gap: 8px;
+    align-items: center;
+    padding: 10px 12px;
+    border-radius: var(--radius-md);
+    border: 1px solid var(--divider);
+    background: var(--surface-200);
+    font-size: 12px;
+    color: var(--text-200);
+}
+
+.source-health-row strong {
+    color: var(--text-100);
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    font-size: 11px;
+}
+
+.source-badge {
+    display: inline-flex;
+    align-items: center;
+    border-radius: var(--radius-full);
+    padding: 2px 8px;
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    border: 1px solid var(--divider);
+    background: var(--surface-200);
+    color: var(--text-200);
+}
+
+.source-badge--yt-dlp,
+.source-badge--youtube,
+.source-badge--youtube-direct {
+    border-color: rgba(239, 68, 68, 0.35);
+    background: rgba(239, 68, 68, 0.12);
+}
+
+.source-badge--monochrome,
+.source-badge--piped {
+    border-color: rgba(16, 185, 129, 0.35);
+    background: rgba(16, 185, 129, 0.12);
+}
+
+.source-badge--jamendo,
+.source-badge--downloaded {
+    border-color: rgba(59, 130, 246, 0.35);
+    background: rgba(59, 130, 246, 0.12);
 }
 
 .reliability-log-top {
@@ -2188,6 +2277,17 @@ button { border: none; background: transparent; cursor: pointer; font-family: in
 
 .queue-item:hover .queue-remove-btn { opacity: 1; }
 .queue-remove-btn:hover { color: #fca5a5; background: rgba(252, 165, 165, 0.1); }
+
+.queue-remove-btn:disabled {
+    opacity: 0.35;
+    cursor: not-allowed;
+}
+
+.queue-actions-group {
+    display: inline-flex;
+    align-items: center;
+    gap: 2px;
+}
 
 /* ═══════════════════════════════════════════════════════
    ASYNC STATE

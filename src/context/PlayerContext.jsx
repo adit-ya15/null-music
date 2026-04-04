@@ -1102,6 +1102,58 @@ export const PlayerProvider = ({ children }) => {
     }
   }, [queue, queueIndex]);
 
+  const moveQueueItem = useCallback((index, direction) => {
+    if (!Number.isInteger(index)) return;
+    if (index < 0 || index >= queue.length) return;
+
+    const targetIndex = direction === 'up' ? index - 1 : direction === 'down' ? index + 1 : -1;
+    if (targetIndex < 0 || targetIndex >= queue.length) return;
+
+    const nextQueue = [...queue];
+    const [moved] = nextQueue.splice(index, 1);
+    nextQueue.splice(targetIndex, 0, moved);
+
+    let nextQueueIndex = queueIndex;
+    if (queueIndex === index) {
+      nextQueueIndex = targetIndex;
+    } else if (index < queueIndex && targetIndex >= queueIndex) {
+      nextQueueIndex = queueIndex - 1;
+    } else if (index > queueIndex && targetIndex <= queueIndex) {
+      nextQueueIndex = queueIndex + 1;
+    }
+
+    setQueue(nextQueue);
+    setQueueIndex(nextQueueIndex);
+  }, [queue, queueIndex]);
+
+  const dedupeQueue = useCallback(() => {
+    if (!queue.length) return;
+
+    const seen = new Set();
+    const nextQueue = [];
+    let nextIndex = queueIndex;
+
+    queue.forEach((track, index) => {
+      const key = String(track?.id || track?.videoId || `${track?.title || 'track'}-${track?.artist || 'artist'}`);
+      if (seen.has(key)) {
+        if (index < queueIndex) nextIndex -= 1;
+        return;
+      }
+      seen.add(key);
+      nextQueue.push(track);
+    });
+
+    if (!nextQueue.length) {
+      setQueue([]);
+      setQueueIndex(-1);
+      return;
+    }
+
+    const boundedIndex = Math.max(0, Math.min(nextIndex, nextQueue.length - 1));
+    setQueue(nextQueue);
+    setQueueIndex(boundedIndex);
+  }, [queue, queueIndex]);
+
   /* -------------------------- SLEEP TIMER WITH FADE -------------------------- */
 
   const fadeIntervalRef = useRef(null);
@@ -1496,7 +1548,9 @@ export const PlayerProvider = ({ children }) => {
     cycleSleepTimer,
     setQueue,
     removeFromQueue,
-    clearQueue
+    clearQueue,
+    moveQueueItem,
+    dedupeQueue
 
   };
 
