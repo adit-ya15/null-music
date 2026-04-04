@@ -63,7 +63,6 @@ export function buildYtdlpArgs(videoId, options = {}) {
     format = process.env.YT_DLP_FORMAT || '251/250/249/140/139/best',
     sourceAddress = process.env.YT_SOURCE_ADDRESS,
     playerClient = process.env.YT_PLAYER_CLIENTS || 'web',
-    cookiesFile = process.env.YT_COOKIES_FILE,
     jsRuntimes = process.env.YT_DLP_JS_RUNTIMES || 'node',
     proxy = getYtdlpProxy(),
     pluginDirs = process.env.YT_DLP_PLUGIN_DIRS || process.env.YTDLP_PLUGIN_DIRS || '',
@@ -81,15 +80,13 @@ export function buildYtdlpArgs(videoId, options = {}) {
     args.push('--plugin-dirs', pluginDir);
   }
 
-  const allowBundled = String(enableBundledBgutilPlugin || '').trim().toLowerCase() !== 'false';
+  const allowBundled = String(enableBundledBgutilPlugin || '').trim().toLowerCase() === 'true';
   const bundledBgutil = allowBundled ? getBundledBgutilPluginDir() : null;
-  if (bundledBgutil && false) args.push('--plugin-dirs', bundledBgutil);
+  if (bundledBgutil) args.push('--plugin-dirs', bundledBgutil);
 
   // JavaScript runtime MUST be specified for modern YouTube extraction
   if (jsRuntimes) args.push('--js-runtimes', jsRuntimes);
 
-  // Optional explicit cookies file (helps with sign-in / age-gated videos).
-  if (cookiesFile) args.push('--cookies', cookiesFile);
   if (proxy) args.push('--proxy', proxy);
 
   // Basic headers to appear as a real client
@@ -161,7 +158,6 @@ export async function ytdlpGetUrl(bin, videoId, options = {}) {
       videoId,
       code,
       playerClient: options?.playerClient || process.env.YT_PLAYER_CLIENTS || 'tv',
-      hasCookies: Boolean(process.env.YT_COOKIES_FILE),
       hasProxy: Boolean(getYtdlpProxy()),
       stderr: err.slice(0, 300),
     });
@@ -174,7 +170,6 @@ export async function ytdlpGetUrl(bin, videoId, options = {}) {
       videoId,
       code,
       playerClient: options?.playerClient || process.env.YT_PLAYER_CLIENTS || 'tv',
-      hasCookies: Boolean(process.env.YT_COOKIES_FILE),
       hasProxy: Boolean(getYtdlpProxy()),
       stderr: err.slice(0, 300),
     });

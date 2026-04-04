@@ -5,7 +5,6 @@
 
 import express from "express";
 import { Innertube } from "youtubei.js";
-import fs from "node:fs";
 import path from "path";
 import { fileURLToPath } from "url";
 import { createProxyMiddleware } from "http-proxy-middleware";
@@ -25,7 +24,7 @@ import {
 import { sendEmailOtp, verifyEmailOtpCode } from "./backend/auth/emailOtp.mjs";
 import { recordTrackIssue } from "./backend/feedback/issueStore.mjs";
 
-import { resolveStreamUrl } from "./backend/resolver/streamResolver.mjs";
+import { resolveStreamUrl, resolveStreamWithMeta } from "./backend/resolver/streamResolver.mjs";
 import { downloadToCache, getCachedFilePath, getCacheStatus } from "./backend/cache/audioCache.mjs";
 import { ytdlpQueue } from "./backend/queue/ytdlpQueue.mjs";
 import { buildYtdlpArgs, getYtdlpProxy } from "./backend/providers/ytdlpProvider.mjs";
@@ -66,11 +65,14 @@ app.get("/health", (req, res) => {
 // request timeout (prevents long-hanging requests)
 const requestTimeout = process.env.REQUEST_TIMEOUT || "10s";
 const timeoutMiddleware = timeout(requestTimeout);
+const BACKEND_STREAMING_ENABLED = String(process.env.BACKEND_STREAMING_ENABLED || '').trim().toLowerCase() === 'true';
 const shouldSkipRequestTimeout = (req) =>
     req.path.startsWith("/api/yt/stream/") ||
-    req.path.startsWith("/api/yt/pipe/") ||
-    req.path.startsWith("/api/yt/download/") ||
-    req.path.startsWith("/api/yt/cache/");
+    (BACKEND_STREAMING_ENABLED && (
+        req.path.startsWith("/api/yt/pipe/") ||
+        req.path.startsWith("/api/yt/download/") ||
+        req.path.startsWith("/api/yt/cache/")
+    ));
 
 app.use((req, res, next) => {
     if (shouldSkipRequestTimeout(req)) {
@@ -113,16 +115,10 @@ function requireRecoApiKey(req, res, next) {
     return next();
 }
 
-// Optional yt-dlp cookies for sign-in/age-gated content.
-// If provided, `backend/providers/ytdlpProvider.mjs` will add `--cookies <file>`.
-if (process.env.YT_COOKIES_FILE) {
-    logger.info("config", "Using YT_COOKIES_FILE for yt-dlp", { file: process.env.YT_COOKIES_FILE });
-}
-
 logger.info("config", "yt-dlp runtime configuration", {
     bin: YT_DLP_BIN,
     jsRuntimes: YT_DLP_JS_RUNTIMES,
-    hasCookiesFile: Boolean(process.env.YT_COOKIES_FILE),
+    backendStreamingEnabled: BACKEND_STREAMING_ENABLED,
     hasProxy: Boolean(YT_DLP_PROXY),
     playerSkip: YT_PLAYER_SKIP,
     extractorArgs: YT_EXTRACTOR_ARGS || "",
@@ -131,27 +127,6 @@ logger.info("config", "yt-dlp runtime configuration", {
 // resolve dirname
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
-
-// Optional convenience: only auto-detect cookies when explicitly enabled.
-// This repo includes a sample cookies.txt, and auto-loading it can break yt-dlp playback.
-if (!process.env.YT_COOKIES_FILE && String(process.env.YT_AUTO_DETECT_COOKIES || '').toLowerCase() === 'true') {
-    const candidates = [
-        path.join(process.cwd(), 'cookies.txt'),
-    ];
-
-    const found = candidates.find((p) => {
-        try {
-            return fs.existsSync(p);
-        } catch {
-            return false;
-        }
-    });
-
-    if (found) {
-        process.env.YT_COOKIES_FILE = found;
-        logger.info('config', 'Auto-detected cookies file', { file: found });
-    }
-}
 
 const cachePromise = createCache();
 
@@ -521,7 +496,6 @@ app.get("/api/yt/stream/:videoId", async (req, res) => {
 
     try {
         const innertube = await getYT();
-        const pipeUrl = `${req.protocol}://${req.get('host')}/api/yt/pipe/${videoId}`;
 
         let title, author, duration, thumbnail;
         try {
@@ -530,23 +504,22 @@ app.get("/api/yt/stream/:videoId", async (req, res) => {
             author = info.basic_info?.author;
             duration = info.basic_info?.duration;
             thumbnail = info.basic_info?.thumbnail?.[0]?.url;
-        } catch { /* metadata is optional but needed for soundcloud fallback */ }
+        } catch {
+            // Metadata is optional for stream URL resolution.
+        }
 
-        let streamUrl = null;
-        let responseDataStreamSource = null;
-        const cacheStatus = getCacheStatus(videoId);
-        
-        if (cacheStatus.cached) {
-            // Serve from our reliable disk cache
-            streamUrl = `${req.protocol}://${req.get('host')}/api/yt/cache/${videoId}`;
-            responseDataStreamSource = "disk-cache";
-            logger.info("stream", "Serving from local disk cache", { videoId });
-        } else {
-            streamUrl = pipeUrl;
-            responseDataStreamSource = "pipe-proxy";
-            logger.info("stream", cacheStatus.warming ? "Serving pipe proxy while cache warms" : "Serving pipe proxy for uncached video", {
-                videoId,
-            });
+        const cache = await cachePromise;
+        const resolved = await resolveStreamWithMeta({
+            innertube,
+            ytdlpBin: YT_DLP_BIN,
+            cache,
+            videoId,
+            title,
+            artist: author,
+        });
+
+        if (!resolved?.url) {
+            return res.status(502).json({ error: "Stream unavailable" });
         }
 
         const responseData = {
@@ -555,25 +528,19 @@ app.get("/api/yt/stream/:videoId", async (req, res) => {
             author,
             duration,
             thumbnail,
-            streamUrl,
-            cacheState: cacheStatus.cached ? "disk" : (cacheStatus.warming ? "warming" : "pipe"),
-            cached: cacheStatus.cached,
-            cacheSizeBytes: cacheStatus.sizeBytes || 0,
-            streamSource: typeof responseDataStreamSource === "string" ? responseDataStreamSource : "unknown",
+            streamUrl: resolved.url,
+            cacheState: "remote",
+            cached: false,
+            cacheSizeBytes: 0,
+            streamSource: resolved.source || "unknown",
         };
 
         res.json(responseData);
     } catch (err) {
         logger.error("stream", "Stream error", { videoId, error: err?.message });
-        const pipeUrl = `${req.protocol}://${req.get('host')}/api/yt/pipe/${videoId}`;
-        res.json({
+        res.status(502).json({
             videoId,
-            streamUrl: pipeUrl,
-            cacheState: "warming",
-            cached: false,
-            cacheSizeBytes: 0,
-            streamSource: "pipe-proxy",
-            error: "Primary stream unavailable, using pipe proxy.",
+            error: "Stream unavailable",
         });
     }
 });
@@ -583,6 +550,12 @@ app.get("/api/yt/stream/:videoId", async (req, res) => {
 // ─────────────────────────────────────────────
 
 app.get("/api/yt/cache/:videoId", (req, res) => {
+    if (!BACKEND_STREAMING_ENABLED) {
+        return res.status(410).json({
+            error: "Backend audio cache serving is disabled. Resolve and stream directly from client sources.",
+        });
+    }
+
     const { videoId } = req.params;
     const cachedPath = getCachedFilePath(videoId);
     if (cachedPath) {
@@ -595,6 +568,16 @@ app.get("/api/yt/cache/:videoId", (req, res) => {
 });
 
 app.get("/api/yt/cache-status/:videoId", (req, res) => {
+    if (!BACKEND_STREAMING_ENABLED) {
+        return res.json({
+            videoId: req.params.videoId,
+            cached: false,
+            warming: false,
+            path: null,
+            disabled: true,
+        });
+    }
+
     const { videoId } = req.params;
     const status = getCacheStatus(videoId);
     res.json({
@@ -604,6 +587,12 @@ app.get("/api/yt/cache-status/:videoId", (req, res) => {
 });
 
 app.get("/api/yt/download/:videoId", async (req, res) => {
+    if (!BACKEND_STREAMING_ENABLED) {
+        return res.status(410).json({
+            error: "YouTube download endpoint is disabled. Only direct legal source downloads are allowed on client.",
+        });
+    }
+
     const { videoId } = req.params;
 
     if (!videoId) return res.status(400).json({ error: "videoId required" });
@@ -841,6 +830,12 @@ app.get("/api/lyrics", async (req, res) => {
 // ─────────────────────────────────────────────
 
 app.get("/api/yt/pipe/:videoId", async (req, res) => {
+    if (!BACKEND_STREAMING_ENABLED) {
+        return res.status(410).json({
+            error: "Backend audio proxy is disabled. Use client-side source resolution.",
+        });
+    }
+
     const { videoId } = req.params;
     if (!videoId || !/^[\w-]{11}$/.test(videoId)) {
         return res.status(400).send("Invalid videoId");
@@ -979,6 +974,42 @@ async function pipeYtdlpToResponse({ req, res, videoId, contentDisposition = "" 
             return;
         }
 
+        // Strategy 2: resolve a direct stream URL through provider fallback chain.
+        // This prevents hard 502s when yt-dlp pipe gets bot-blocked for specific videos.
+        try {
+            const innertube = await getYT();
+            const cache = await cachePromise;
+            const fallbackUrl = await resolveStreamUrl({
+                innertube,
+                ytdlpBin: YT_DLP_BIN,
+                cache,
+                videoId,
+                title: null,
+                artist: null,
+            });
+
+            if (fallbackUrl) {
+                const upstream = await fetch(fallbackUrl, {
+                    headers: {
+                        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+                    },
+                });
+
+                if (upstream.ok || upstream.status === 206) {
+                    logger.warn("pipe", "yt-dlp pipe failed; serving resolver fallback stream", {
+                        videoId,
+                        status: upstream.status,
+                    });
+                    return pipeUpstream(upstream, res);
+                }
+            }
+        } catch (fallbackErr) {
+            logger.warn("pipe", "resolver fallback failed after yt-dlp pipe failure", {
+                videoId,
+                error: fallbackErr?.message,
+            });
+        }
+
         if (!res.headersSent) {
             logger.error("pipe", "yt-dlp pipe failed", {
                 videoId,
@@ -1075,7 +1106,6 @@ app.get("/api/yt/up-next/:videoId", async (req, res) => {
 // ─────────────────────────────────────────────
 
 app.get("/api/yt/health", (req, res) => {
-    const cookiesFile = process.env.YT_COOKIES_FILE || "";
     res.json({
         status: "ok",
         cache: {
@@ -1086,11 +1116,10 @@ app.get("/api/yt/health", (req, res) => {
         ytdlp: {
             bin: YT_DLP_BIN,
             jsRuntimes: YT_DLP_JS_RUNTIMES,
-            hasCookiesFile: Boolean(cookiesFile),
-            cookiesFileExists: cookiesFile ? fs.existsSync(cookiesFile) : false,
             hasProxy: Boolean(YT_DLP_PROXY),
             playerSkip: YT_PLAYER_SKIP,
             extractorArgs: YT_EXTRACTOR_ARGS || "",
+            backendStreamingEnabled: BACKEND_STREAMING_ENABLED,
         },
     });
 });
@@ -1103,7 +1132,6 @@ app.get("/api/yt/health/extract", async (req, res) => {
         return res.status(400).json({ ok: false, error: "videoId query parameter is required" });
     }
 
-    const cookiesFile = process.env.YT_COOKIES_FILE || "";
     const args = buildYtdlpArgs(videoId, {
         getUrl: true,
         playerClient,
@@ -1141,8 +1169,6 @@ app.get("/api/yt/health/extract", async (req, res) => {
             ytdlp: {
                 bin: YT_DLP_BIN,
                 jsRuntimes: YT_DLP_JS_RUNTIMES,
-                hasCookiesFile: Boolean(cookiesFile),
-                cookiesFileExists: cookiesFile ? fs.existsSync(cookiesFile) : false,
                 hasProxy: Boolean(YT_DLP_PROXY),
                 playerSkip: YT_PLAYER_SKIP,
                 extractorArgs: YT_EXTRACTOR_ARGS || "",
@@ -1158,8 +1184,6 @@ app.get("/api/yt/health/extract", async (req, res) => {
             ytdlp: {
                 bin: YT_DLP_BIN,
                 jsRuntimes: YT_DLP_JS_RUNTIMES,
-                hasCookiesFile: Boolean(cookiesFile),
-                cookiesFileExists: cookiesFile ? fs.existsSync(cookiesFile) : false,
                 hasProxy: Boolean(YT_DLP_PROXY),
                 playerSkip: YT_PLAYER_SKIP,
                 extractorArgs: YT_EXTRACTOR_ARGS || "",

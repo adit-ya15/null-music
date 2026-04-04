@@ -614,11 +614,9 @@ public class MusicService extends Service {
 
         MediaItem.Builder builder = new MediaItem.Builder().setUri(url);
         if (url != null) {
-            if (url.contains("/api/yt/pipe/")) {
+            if (url.contains("mime=audio%2Fwebm") || url.contains("mime=audio/webm") || url.contains(".webm")) {
                 builder.setMimeType(MimeTypes.AUDIO_WEBM);
-            } else if (url.contains("mime=audio%2Fwebm") || url.contains("mime=audio/webm")) {
-                builder.setMimeType(MimeTypes.AUDIO_WEBM);
-            } else if (url.contains("mime=audio%2Fmp4") || url.contains("mime=audio/mp4")) {
+            } else if (url.contains("mime=audio%2Fmp4") || url.contains("mime=audio/mp4") || url.contains(".m4a") || url.contains(".mp4")) {
                 builder.setMimeType(MimeTypes.AUDIO_MP4);
             }
         }

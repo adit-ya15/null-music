@@ -12,10 +12,10 @@ import React, {
 import { Capacitor } from '@capacitor/core';
 
 import { nativeMediaApi } from "../api/nativeMedia";
-import { buildApiUrl } from "../api/apiBase";
 import { youtubeApi } from "../api/youtube";
 import { recommendationsApi } from "../api/recommendations";
 import { getOrCreateUserId } from "../utils/userId";
+import { createMusicSources } from "../sources/musicSources";
 
 import {
   buildPlaybackSession,
@@ -102,6 +102,8 @@ function isYoutubeCacheUrl(url = "") {
 export const usePlayer = () => useContext(PlayerContext);
 
 export const PlayerProvider = ({ children }) => {
+
+  const musicSources = useRef(createMusicSources({ youtubeApi })).current;
 
   const [currentTrack, setCurrentTrack] = useState(null);
   const [isPlaying, setIsPlaying] = useState(false);
@@ -367,8 +369,7 @@ export const PlayerProvider = ({ children }) => {
       return resolved;
     }
 
-    const videoId = track.videoId || track.id.replace(/^yt-/, "");
-    const details = await youtubeApi.getStreamDetails(videoId, {
+    const details = await musicSources.youtube.getStreamUrl(track, {
       preferDirect: isNative,
     });
 
@@ -382,7 +383,7 @@ export const PlayerProvider = ({ children }) => {
       streamResolvedAt: Date.now(),
     });
     if (record) {
-      const fallbackSources = new Set(['piped', 'ytdl-core', 'soundcloud', 'yt-dlp']);
+      const fallbackSources = new Set(['piped', 'ytdl-core', 'soundcloud', 'yt-dlp', 'monochrome']);
       recordReliabilityEvent('resolved', {
         trackId: track.id,
         title: track.title,
@@ -402,7 +403,7 @@ export const PlayerProvider = ({ children }) => {
       }
     }
     return resolved;
-  }, [getResolvedTrackFromCache, mergeResolvedTrack, offlineOnlyMode, recordReliabilityEvent]);
+  }, [getResolvedTrackFromCache, mergeResolvedTrack, musicSources.youtube, offlineOnlyMode, recordReliabilityEvent]);
 
   /** Pre-resolve stream URL for a track (used for gapless preloading). */
   const preResolveStream = useCallback(async (track) => {
@@ -1372,12 +1373,14 @@ export const PlayerProvider = ({ children }) => {
         }
 
         if (cachedItem?.source === 'youtube') {
-          const videoId = cachedItem.videoId || String(cachedItem.id || '').replace(/^yt-/, '');
-          if (videoId) {
+          const details = await musicSources.youtube.getStreamUrl(cachedItem, {
+            preferDirect: true,
+          });
+          if (details?.streamUrl) {
             return mergeResolvedTrack(cachedItem, {
-              streamUrl: buildApiUrl(`/yt/pipe/${videoId}`),
-              streamSource: 'pipe-proxy',
-              cacheState: 'pipe',
+              streamUrl: details.streamUrl,
+              streamSource: details.streamSource || 'youtube-direct',
+              cacheState: details.cacheState || null,
               streamResolvedAt: Date.now(),
             });
           }
@@ -1413,7 +1416,7 @@ export const PlayerProvider = ({ children }) => {
     return () => {
       cancelled = true;
     };
-  }, [getResolvedTrackFromCache, mergeResolvedTrack, queue, queueIndex, persistResolvedTrack]);
+  }, [getResolvedTrackFromCache, mergeResolvedTrack, musicSources.youtube, queue, queueIndex, persistResolvedTrack]);
 
   /* -------------------------- CONTEXT VALUE -------------------------- */
 

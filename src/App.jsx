@@ -6,7 +6,6 @@ import { youtubeApi } from './api/youtube';
 import { nativeMediaApi } from './api/nativeMedia';
 import { recommendationsApi } from './api/recommendations';
 import { authApi } from './api/auth';
-import { buildApiUrl } from './api/apiBase';
 import { feedbackApi } from './api/feedback';
 import { useLocalStorage } from './hooks/useLocalStorage';
 import { buildHistory, insertTrackNext } from './utils/playerState';
@@ -1108,9 +1107,25 @@ function App() {
       return true;
     }
 
-    const downloadUrl = track.source === 'youtube'
-      ? buildApiUrl(`/yt/download/${track.videoId || getTrackSourceId(track)}`)
-      : track.streamUrl;
+    const isYoutubeTrack = track.source === 'youtube';
+    const downloadUrl = isYoutubeTrack ? '' : track.streamUrl;
+
+    if (isYoutubeTrack) {
+      const downloadId = getTrackSourceId(track);
+      setDownloadJobs((prev) => ({
+        ...prev,
+        [downloadId]: {
+          ...(prev[downloadId] || {}),
+          id: downloadId,
+          title: track.title || 'Untitled',
+          progress: 0,
+          status: 'failed',
+          message: 'YouTube downloads are disabled. Only direct legal source URLs can be downloaded.',
+        },
+      }));
+      if (closeMenu) closeContextMenu();
+      return false;
+    }
 
     if (!downloadUrl) {
       if (closeMenu) closeContextMenu();

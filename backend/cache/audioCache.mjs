@@ -166,10 +166,6 @@ export function downloadToCache(videoId, ytdlpBin) {
     const bundledBgutil = allowBundled ? getBundledBgutilPluginDir() : null;
     if (bundledBgutil) args.push('--plugin-dirs', bundledBgutil);
 
-    if (process.env.YT_COOKIES_FILE) {
-        args.push('--cookies', process.env.YT_COOKIES_FILE);
-    }
-
     if (process.env.YT_DLP_JS_RUNTIMES) {
         args.push('--js-runtimes', process.env.YT_DLP_JS_RUNTIMES);
     }
