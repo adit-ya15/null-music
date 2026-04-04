@@ -151,6 +151,83 @@ async function ensureUserSchema() {
       );
     `);
 
+    // Backward-compatible migration for older tables created before newer auth fields.
+    await query("ALTER TABLE users ADD COLUMN IF NOT EXISTS email TEXT NOT NULL DEFAULT ''");
+    await query("ALTER TABLE users ADD COLUMN IF NOT EXISTS phone TEXT NOT NULL DEFAULT ''");
+    await query("ALTER TABLE users ADD COLUMN IF NOT EXISTS name TEXT NOT NULL DEFAULT ''");
+    await query("ALTER TABLE users ADD COLUMN IF NOT EXISTS google_sub TEXT NOT NULL DEFAULT ''");
+    await query("ALTER TABLE users ADD COLUMN IF NOT EXISTS password_hash TEXT NOT NULL DEFAULT ''");
+    await query("ALTER TABLE users ADD COLUMN IF NOT EXISTS password_salt TEXT NOT NULL DEFAULT ''");
+    await query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS created_at BIGINT NOT NULL DEFAULT ${(Date.now())}`);
+    await query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS updated_at BIGINT NOT NULL DEFAULT ${(Date.now())}`);
+    await query("ALTER TABLE users ADD COLUMN IF NOT EXISTS last_login_at BIGINT NOT NULL DEFAULT 0");
+    await query("ALTER TABLE users ADD COLUMN IF NOT EXISTS library JSONB NOT NULL DEFAULT '{}'::jsonb");
+
+    // Older schemas used TIMESTAMPTZ for these fields. Convert once to BIGINT(ms).
+    await query(`
+      DO $$
+      BEGIN
+        IF EXISTS (
+          SELECT 1
+          FROM information_schema.columns
+          WHERE table_schema = 'public'
+            AND table_name = 'users'
+            AND column_name = 'created_at'
+            AND data_type = 'timestamp with time zone'
+        ) THEN
+          ALTER TABLE public.users
+            ALTER COLUMN created_at DROP DEFAULT;
+          ALTER TABLE public.users
+            ALTER COLUMN created_at TYPE BIGINT
+            USING (EXTRACT(EPOCH FROM created_at) * 1000)::BIGINT;
+        END IF;
+      END $$;
+    `);
+
+    await query(`
+      DO $$
+      BEGIN
+        IF EXISTS (
+          SELECT 1
+          FROM information_schema.columns
+          WHERE table_schema = 'public'
+            AND table_name = 'users'
+            AND column_name = 'updated_at'
+            AND data_type = 'timestamp with time zone'
+        ) THEN
+          ALTER TABLE public.users
+            ALTER COLUMN updated_at DROP DEFAULT;
+          ALTER TABLE public.users
+            ALTER COLUMN updated_at TYPE BIGINT
+            USING (EXTRACT(EPOCH FROM updated_at) * 1000)::BIGINT;
+        END IF;
+      END $$;
+    `);
+
+    await query(`
+      DO $$
+      BEGIN
+        IF EXISTS (
+          SELECT 1
+          FROM information_schema.columns
+          WHERE table_schema = 'public'
+            AND table_name = 'users'
+            AND column_name = 'last_login_at'
+            AND data_type = 'timestamp with time zone'
+        ) THEN
+          ALTER TABLE public.users
+            ALTER COLUMN last_login_at DROP DEFAULT;
+          ALTER TABLE public.users
+            ALTER COLUMN last_login_at TYPE BIGINT
+            USING COALESCE((EXTRACT(EPOCH FROM last_login_at) * 1000)::BIGINT, 0);
+        END IF;
+      END $$;
+    `);
+
+    await query("ALTER TABLE users ALTER COLUMN created_at SET DEFAULT 0");
+    await query("ALTER TABLE users ALTER COLUMN updated_at SET DEFAULT 0");
+    await query("ALTER TABLE users ALTER COLUMN last_login_at SET DEFAULT 0");
+
     await query("CREATE UNIQUE INDEX IF NOT EXISTS users_email_uq ON users (email) WHERE email <> ''");
     await query("CREATE UNIQUE INDEX IF NOT EXISTS users_phone_uq ON users (phone) WHERE phone <> ''");
     await query("CREATE UNIQUE INDEX IF NOT EXISTS users_google_sub_uq ON users (google_sub) WHERE google_sub <> ''");
@@ -174,6 +251,11 @@ function rowToStoredUser(row) {
     lastLoginAt: Number(row.last_login_at) || 0,
     library: normalizeLibraryPayload(row.library || emptyUserLibrary()),
   };
+}
+
+function dbNullableText(value) {
+  const normalized = String(value || '').trim();
+  return normalized ? normalized : null;
 }
 
 async function getUserByLookup({ userId = '', email = '', phone = '', googleSub = '' }) {
@@ -230,10 +312,10 @@ async function insertUser(user) {
     `,
     [
       stored.id,
-      stored.email,
-      stored.phone,
+      dbNullableText(stored.email),
+      dbNullableText(stored.phone),
       stored.name,
-      stored.googleSub,
+      dbNullableText(stored.googleSub),
       stored.passwordHash,
       stored.passwordSalt,
       stored.createdAt,

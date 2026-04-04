@@ -6,7 +6,6 @@ import { metrics } from '../lib/metrics.mjs';
 import { invidiousGetAudioUrl } from '../providers/invidiousProvider.mjs';
 import { pipedGetAudioUrl } from '../providers/pipedProvider.mjs';
 import { saavnGetAudioUrl } from '../providers/saavnProvider.mjs';
-import { soundcloudGetAudioUrl } from '../providers/soundcloudProvider.mjs';
 import { ytdlCoreGetAudioUrl } from '../providers/ytdlCoreProvider.mjs';
 import { ytdlpGetUrl } from '../providers/ytdlpProvider.mjs';
 import { ytdlpQueue } from '../queue/ytdlpQueue.mjs';
@@ -173,12 +172,6 @@ async function resolveStreamWithMetaInternal({
       return await saavnGetAudioUrl(videoId, title, artist);
     };
 
-    const soundcloudFallback = async () => {
-      const url = await soundcloudGetAudioUrl(videoId, title, artist);
-      if (!url) return null;
-      return url;
-    };
-
     let resolved = null;
 
     try {
@@ -210,12 +203,6 @@ async function resolveStreamWithMetaInternal({
         name: 'saavn',
         metric: 'resolver.secondary.success',
         fn: saavnFallback,
-        timeoutMs: PRIMARY_TIMEOUT_MS,
-      },
-      {
-        name: 'soundcloud',
-        metric: 'resolver.fallback.used',
-        fn: soundcloudFallback,
         timeoutMs: PRIMARY_TIMEOUT_MS,
       },
       {

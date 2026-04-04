@@ -1,0 +1,40 @@
+{
+  "users": [
+    {
+      "id": "4e515273-3a51-4618-92b8-cd32d46fd3d1",
+      "email": "diag+1775336629285@example.com",
+      "phone": "",
+      "name": "Diag",
+      "googleSub": "",
+      "passwordHash": "245ad0b1cfec39b544163a9ce270dbbf95a66a4aea411277f07b0cff802036b69b8bc96c6199608142c150e0708c1b58132134fc16de997efa17bfe46f5ed69e",
+      "passwordSalt": "199eae6401e9496991f8de91d39730c3",
+      "createdAt": 1775336629314,
+      "updatedAt": 1775336629314,
+      "lastLoginAt": 1775336629314,
+      "library": {
+        "favorites": [],
+        "playlists": [],
+        "history": [],
+        "updatedAt": 1775336629314
+      }
+    },
+    {
+      "id": "d04a6db1-9c4f-49a0-8b90-7564e2c84611",
+      "email": "diag+1775337189730@example.com",
+      "phone": "",
+      "name": "Diag",
+      "googleSub": "",
+      "passwordHash": "9af90282f3a14d9652ae927b2758336d69fc624b0adff05e29989ccaf52d5da5906d4c991bcd706ee5ce676cc24b90088be603d1eb52b26f30aa53e1f4d2546f",
+      "passwordSalt": "c4a05761f6fa1ee136d9e33dfde6ff00",
+      "createdAt": 1775337189759,
+      "updatedAt": 1775337189759,
+      "lastLoginAt": 1775337189759,
+      "library": {
+        "favorites": [],
+        "playlists": [],
+        "history": [],
+        "updatedAt": 1775337189759
+      }
+    }
+  ]
+}
