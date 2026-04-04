@@ -2,6 +2,20 @@ import { logInfo } from '../utils/logger.js';
 
 const DEFAULT_TIMEOUT_MS = 6500;
 const MAX_CANDIDATES = 12;
+const DEFAULT_MONOCHROME_ENDPOINTS = [
+  'https://mono-01.nullapp.dev/{videoId}',
+  'https://mono-02.nullapp.dev/{videoId}',
+  'https://mono-03.nullapp.dev/{videoId}',
+  'https://mono-04.nullapp.dev/{videoId}',
+  'https://mono-05.nullapp.dev/{videoId}',
+  'https://mono-06.nullapp.dev/{videoId}',
+  'https://mono-07.nullapp.dev/{videoId}',
+  'https://mono-08.nullapp.dev/{videoId}',
+  'https://mono-09.nullapp.dev/{videoId}',
+  'https://mono-10.nullapp.dev/{videoId}',
+  'https://mono-11.nullapp.dev/{videoId}',
+  'https://mono-12.nullapp.dev/{videoId}',
+];
 
 const latencyState = new Map();
 
@@ -119,7 +133,9 @@ async function verifyStreamUrl(streamUrl, timeoutMs = 5000) {
 
 function buildCandidates(videoId, endpointsCsv) {
   const envEndpoints = import.meta?.env?.VITE_MONOCHROME_ENDPOINTS || '';
-  const rawEndpoints = splitCsv(endpointsCsv || envEndpoints || '');
+  const rawEndpoints = splitCsv(endpointsCsv || envEndpoints || '').length
+    ? splitCsv(endpointsCsv || envEndpoints || '')
+    : DEFAULT_MONOCHROME_ENDPOINTS;
 
   const candidates = [];
   for (const endpoint of rawEndpoints) {

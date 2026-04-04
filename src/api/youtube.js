@@ -1,7 +1,5 @@
-import axios from 'axios';
 import { friendlyErrorMessage, logError } from '../utils/logger';
-
-import { buildApiUrl } from './apiBase';
+import { getConfiguredEndpoints, requestFromEndpoints, validateStreamUrl } from './endpointClient';
 
 const decodeHtml = (value) =>
   String(value || '')
@@ -59,18 +57,32 @@ const pickThumbnail = (ytSong) => {
 const pickAlbum = (ytSong) =>
   pickText(ytSong?.album?.name, ytSong?.album?.text, ytSong?.album) || '';
 
-const requestYoutube = async (tag, path, config, fallbackMessage) => {
-  try {
-    const response = await axios.get(buildApiUrl(`/yt${path}`), config);
-    return { ok: true, response, error: null };
-  } catch (error) {
-    logError(tag, error, { path, params: config?.params });
-    return {
-      ok: false,
-      response: null,
-      error: friendlyErrorMessage(error, fallbackMessage),
-    };
+function localApiEndpointFallback() {
+  if (typeof window !== 'undefined' && window.location?.origin) {
+    return `${window.location.origin}/api`;
   }
+  return '';
+}
+
+const YOUTUBE_ENDPOINTS = getConfiguredEndpoints('VITE_YOUTUBE_ENDPOINTS', localApiEndpointFallback());
+
+const requestYoutube = async (tag, path, options, fallbackMessage) => {
+  const result = await requestFromEndpoints({
+    endpoints: YOUTUBE_ENDPOINTS,
+    path: `/yt${path}`,
+    query: options?.params,
+    method: options?.method || 'GET',
+    body: options?.body,
+    timeoutMs: options?.timeout || 15000,
+  });
+
+  if (result.ok) {
+    return { ok: true, response: result.response, error: null };
+  }
+
+  const error = new Error(friendlyErrorMessage(null, fallbackMessage));
+  logError(tag, error, { path, params: options?.params, endpoints: YOUTUBE_ENDPOINTS });
+  return { ok: false, response: null, error: fallbackMessage };
 };
 
 export const youtubeApi = {
@@ -123,15 +135,18 @@ export const youtubeApi = {
     const requestedDirect = Boolean(preferDirect);
     const result = await youtubeApi.getStreamDetailsSafe(videoId);
     const directUrl = result.ok ? result.data?.streamUrl : null;
+    const validated = directUrl ? await validateStreamUrl(directUrl) : false;
+
     return {
       videoId,
-      streamUrl: directUrl || null,
+      streamUrl: validated ? directUrl : null,
       directUrl: directUrl || null,
       requestedDirect,
       cacheState: result.ok ? result.data?.cacheState || 'remote' : 'remote',
       cached: Boolean(result.ok ? result.data?.cached : false),
       cacheSizeBytes: Number(result.ok ? result.data?.cacheSizeBytes || 0 : 0),
       streamSource: result.ok ? result.data?.streamSource || null : null,
+      verified: validated,
     };
   },
 

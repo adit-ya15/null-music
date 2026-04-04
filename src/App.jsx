@@ -3,6 +3,7 @@ import { Capacitor } from '@capacitor/core';
 import { Play, User, Shuffle, ListPlus, Sun, Moon, ChevronRight, Heart, Clock, Music, ListMusic, Disc3, Sparkles, SkipForward, Download, Upload, Settings, ShieldCheck, Mail, WifiOff, Trash2, Pencil, ArrowUp, ArrowDown, AlertCircle, X } from 'lucide-react';
 import { usePlayer } from './context/PlayerContext';
 import { youtubeApi } from './api/youtube';
+import { jamendoApi } from './api/jamendo';
 import { nativeMediaApi } from './api/nativeMedia';
 import { recommendationsApi } from './api/recommendations';
 import { authApi } from './api/auth';
@@ -803,15 +804,21 @@ function App() {
     setIsSearchLoading(true);
     setSearchError(null);
     try {
-      const ytRes = await youtubeApi.searchSongsSafe(term, 20);
+      const [ytRes, jamendoRes] = await Promise.all([
+        youtubeApi.searchSongsSafe(term, 20),
+        jamendoApi.searchSongsSafe(term, 12),
+      ]);
 
-      if (!ytRes.ok) {
+      if (!ytRes.ok && !jamendoRes.ok) {
         setSearchResults([]);
-        setSearchError(ytRes.error || 'Search unavailable.');
+        setSearchError(ytRes.error || jamendoRes.error || 'Search unavailable.');
         return;
       }
 
-      const combined = onlyYoutube(ytRes.data || []);
+      const combined = onlyYoutube([
+        ...(ytRes.ok ? (ytRes.data || []) : []),
+        ...(jamendoRes.ok ? (jamendoRes.data || []) : []),
+      ]);
       setSearchResults(combined);
       setSearchCache((prev) => ({ ...prev, [term]: combined }));
     } catch (error) {

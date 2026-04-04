@@ -58,3 +58,50 @@ test('monochrome source resolves youtube ids', async () => {
 
   assert.equal(resolved, null);
 });
+
+test('jamendo source resolves stream with jamendo api', async () => {
+  const youtubeApi = {
+    async searchSongsSafe() {
+      return { ok: true, data: [] };
+    },
+    async getStreamDetails() {
+      return { streamUrl: null };
+    },
+  };
+
+  const jamendoApi = {
+    async searchSongsSafe() {
+      return {
+        ok: true,
+        data: [
+          {
+            id: 'jm-1',
+            originalId: '1',
+            title: 'Jamendo Song',
+            artist: 'Jamendo Artist',
+            source: 'jamendo',
+            streamUrl: 'https://jamendo.example/audio.mp3',
+          },
+        ],
+      };
+    },
+    async resolveStreamSafe() {
+      return {
+        ok: true,
+        data: {
+          streamUrl: 'https://jamendo.example/audio.mp3',
+          streamSource: 'jamendo',
+        },
+      };
+    },
+  };
+
+  const sources = createMusicSources({ youtubeApi, jamendoApi });
+  const search = await sources.jamendo.search('jam', 1);
+  assert.equal(search.ok, true);
+  assert.equal(search.data.length, 1);
+
+  const resolved = await sources.jamendo.getStreamUrl(search.data[0]);
+  assert.equal(resolved.streamUrl, 'https://jamendo.example/audio.mp3');
+  assert.equal(resolved.streamSource, 'jamendo');
+});

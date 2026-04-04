@@ -16,14 +16,14 @@ export default function TrackCard({
   const coverUrl = track.coverArt || '';
   const sourceLabel = track.source === 'saavn'
     ? 'SV'
-    : track.source === 'soundcloud'
-      ? 'SC'
+    : track.source === 'jamendo'
+      ? 'JM'
       : track.source === 'downloaded'
         ? 'DL'
         : 'YT';
   const sourceClass = track.source === 'saavn'
     ? 'badge-sv'
-    : track.source === 'soundcloud'
+    : track.source === 'jamendo'
       ? 'badge-sv'
       : track.source === 'downloaded'
         ? 'badge-dl'

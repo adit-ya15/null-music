@@ -13,6 +13,7 @@ import { Capacitor } from '@capacitor/core';
 
 import { nativeMediaApi } from "../api/nativeMedia";
 import { youtubeApi } from "../api/youtube";
+import { jamendoApi } from "../api/jamendo";
 import { recommendationsApi } from "../api/recommendations";
 import { getOrCreateUserId } from "../utils/userId";
 import { createMusicSources } from "../sources/musicSources";
@@ -103,7 +104,7 @@ export const usePlayer = () => useContext(PlayerContext);
 
 export const PlayerProvider = ({ children }) => {
 
-  const musicSources = useRef(createMusicSources({ youtubeApi })).current;
+  const musicSources = useRef(createMusicSources({ youtubeApi, jamendoApi })).current;
 
   const [currentTrack, setCurrentTrack] = useState(null);
   const [isPlaying, setIsPlaying] = useState(false);
@@ -349,6 +350,30 @@ export const PlayerProvider = ({ children }) => {
     }
 
     if (track.source !== "youtube") {
+      if (track.source === 'jamendo') {
+        const resolvedJamendo = await musicSources.jamendo.getStreamUrl(track);
+        const streamUrl = resolvedJamendo?.streamUrl || existingUrl;
+        if (!streamUrl) throw new Error('Jamendo stream unavailable');
+
+        const resolved = mergeResolvedTrack(track, {
+          streamUrl,
+          streamSource: resolvedJamendo?.streamSource || track.streamSource || 'jamendo',
+          streamResolvedAt: Date.now(),
+        });
+        if (record) {
+          recordReliabilityEvent('resolved', {
+            trackId: track.id,
+            title: track.title,
+            streamSource: resolved.streamSource || 'jamendo',
+            cacheState: null,
+            reason,
+            refreshed: forceRefresh,
+            urlKind: 'remote',
+          });
+        }
+        return resolved;
+      }
+
       if (!existingUrl) throw new Error("Stream unavailable");
       const resolved = mergeResolvedTrack(track, {
         streamUrl: existingUrl,
@@ -383,7 +408,7 @@ export const PlayerProvider = ({ children }) => {
       streamResolvedAt: Date.now(),
     });
     if (record) {
-      const fallbackSources = new Set(['piped', 'ytdl-core', 'soundcloud', 'yt-dlp', 'monochrome']);
+      const fallbackSources = new Set(['piped', 'ytdl-core', 'jamendo', 'yt-dlp', 'monochrome']);
       recordReliabilityEvent('resolved', {
         trackId: track.id,
         title: track.title,
@@ -403,7 +428,7 @@ export const PlayerProvider = ({ children }) => {
       }
     }
     return resolved;
-  }, [getResolvedTrackFromCache, mergeResolvedTrack, musicSources.youtube, offlineOnlyMode, recordReliabilityEvent]);
+  }, [getResolvedTrackFromCache, mergeResolvedTrack, musicSources.jamendo, musicSources.youtube, offlineOnlyMode, recordReliabilityEvent]);
 
   /** Pre-resolve stream URL for a track (used for gapless preloading). */
   const preResolveStream = useCallback(async (track) => {

@@ -5,7 +5,7 @@ function normalizeVideoId(track) {
   return String(raw).replace(/^yt-/, '').trim();
 }
 
-export function createMusicSources({ youtubeApi }) {
+export function createMusicSources({ youtubeApi, jamendoApi }) {
   const youtubeSource = {
     id: 'youtube',
     async search(query, limit = 20) {
@@ -27,6 +27,7 @@ export function createMusicSources({ youtubeApi }) {
           streamUrl,
           streamSource: details?.streamSource || 'youtube-direct',
           cacheState: details?.cacheState || null,
+          verified: Boolean(details?.verified),
         };
       }
 
@@ -46,8 +47,35 @@ export function createMusicSources({ youtubeApi }) {
     },
   };
 
+  const jamendoSource = {
+    id: 'jamendo',
+    async search(query, limit = 20) {
+      if (!jamendoApi) return { ok: false, data: [], error: 'Jamendo is unavailable.' };
+      return jamendoApi.searchSongsSafe(query, limit);
+    },
+    async getStreamUrl(track) {
+      if (!jamendoApi) return null;
+
+      const resolved = await jamendoApi.resolveStreamSafe({
+        url: track?.streamUrl || track?.url,
+        title: track?.title,
+        artist: track?.artist,
+        trackId: track?.originalId || normalizeVideoId(track),
+      });
+
+      if (!resolved.ok || !resolved.data?.streamUrl) return null;
+
+      return {
+        streamUrl: resolved.data.streamUrl,
+        streamSource: resolved.data.streamSource || 'jamendo',
+        verified: true,
+      };
+    },
+  };
+
   return {
     youtube: youtubeSource,
     monochrome: monochromeSource,
+    jamendo: jamendoSource,
   };
 }
