@@ -3,7 +3,6 @@ import { Capacitor } from '@capacitor/core';
 import { Play, User, Shuffle, ListPlus, Sun, Moon, ChevronRight, Heart, Clock, Music, ListMusic, Disc3, Sparkles, SkipForward, Download, Upload, Settings, ShieldCheck, Mail, WifiOff, Trash2, Pencil, ArrowUp, ArrowDown, AlertCircle, X } from 'lucide-react';
 import { usePlayer } from './context/PlayerContext';
 import { youtubeApi } from './api/youtube';
-import { soundcloudApi } from './api/soundcloud';
 import { nativeMediaApi } from './api/nativeMedia';
 import { recommendationsApi } from './api/recommendations';
 import { authApi } from './api/auth';
@@ -804,21 +803,15 @@ function App() {
     setIsSearchLoading(true);
     setSearchError(null);
     try {
-      const [ytRes, scRes] = await Promise.all([
-        youtubeApi.searchSongsSafe(term, 20),
-        soundcloudApi.searchSongsSafe(term, 12),
-      ]);
+      const ytRes = await youtubeApi.searchSongsSafe(term, 20);
 
-      if (!ytRes.ok && !scRes.ok) {
+      if (!ytRes.ok) {
         setSearchResults([]);
-        setSearchError(ytRes.error || scRes.error || 'Search unavailable.');
+        setSearchError(ytRes.error || 'Search unavailable.');
         return;
       }
 
-      const combined = onlyYoutube([
-        ...(ytRes.ok ? (ytRes.data || []) : []),
-        ...(scRes.ok ? (scRes.data || []) : []),
-      ]);
+      const combined = onlyYoutube(ytRes.data || []);
       setSearchResults(combined);
       setSearchCache((prev) => ({ ...prev, [term]: combined }));
     } catch (error) {

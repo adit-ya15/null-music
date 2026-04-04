@@ -17,13 +17,7 @@ test('youtube source uses backend stream result when available', async () => {
     },
   };
 
-  const soundcloudApi = {
-    async resolveStreamSafe() {
-      return { ok: false, data: null, error: 'not needed' };
-    },
-  };
-
-  const sources = createMusicSources({ youtubeApi, soundcloudApi });
+  const sources = createMusicSources({ youtubeApi });
   const resolved = await sources.youtube.getStreamUrl({ id: 'yt-abc123def45', title: 'Song', artist: 'Artist' });
 
   assert.ok(resolved);
@@ -31,7 +25,7 @@ test('youtube source uses backend stream result when available', async () => {
   assert.equal(resolved.streamSource, 'yt-dlp');
 });
 
-test('youtube source falls back to soundcloud resolver when direct stream is unavailable', async () => {
+test('youtube source falls back to monochrome resolver when direct stream is unavailable', async () => {
   const youtubeApi = {
     async searchSongsSafe() {
       return { ok: true, data: [] };
@@ -41,28 +35,15 @@ test('youtube source falls back to soundcloud resolver when direct stream is una
     },
   };
 
-  const soundcloudApi = {
-    async resolveStreamSafe() {
-      return {
-        ok: true,
-        data: {
-          streamUrl: 'https://media.example/sc-audio.mp3',
-          streamSource: 'soundcloud',
-        },
-        error: null,
-      };
-    },
-  };
+  const sources = createMusicSources({ youtubeApi });
+  const originalGetStreamDetails = youtubeApi.getStreamDetails;
+  youtubeApi.getStreamDetails = async () => originalGetStreamDetails();
 
-  const sources = createMusicSources({ youtubeApi, soundcloudApi });
   const resolved = await sources.youtube.getStreamUrl({ id: 'yt-xyz98765432', title: 'Song', artist: 'Artist' });
-
-  assert.ok(resolved);
-  assert.equal(resolved.streamUrl, 'https://media.example/sc-audio.mp3');
-  assert.equal(resolved.streamSource, 'soundcloud');
+  assert.equal(resolved, null);
 });
 
-test('soundcloud source resolveTrack delegates to soundcloudApi', async () => {
+test('monochrome source resolves youtube ids', async () => {
   const youtubeApi = {
     async searchSongsSafe() {
       return { ok: true, data: [] };
@@ -72,16 +53,8 @@ test('soundcloud source resolveTrack delegates to soundcloudApi', async () => {
     },
   };
 
-  const soundcloudApi = {
-    async resolveStreamSafe(payload) {
-      return { ok: true, data: { streamUrl: 'https://sc.local/audio', streamSource: 'soundcloud' }, payload };
-    },
-  };
+  const sources = createMusicSources({ youtubeApi });
+  const resolved = await sources.monochrome.getStreamUrl({ id: 'yt-11111111111' });
 
-  const sources = createMusicSources({ youtubeApi, soundcloudApi });
-  const track = { id: 'sc-111', permalinkUrl: 'https://soundcloud.com/user/track', title: 'Track', artist: 'User' };
-  const resolved = await sources.soundcloud.resolveTrack(track);
-
-  assert.equal(resolved.ok, true);
-  assert.equal(resolved.data.streamUrl, 'https://sc.local/audio');
+  assert.equal(resolved, null);
 });
