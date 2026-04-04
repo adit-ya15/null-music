@@ -1121,23 +1121,40 @@ function App() {
     }
 
     const isYoutubeTrack = track.source === 'youtube';
-    const downloadUrl = isYoutubeTrack ? '' : track.streamUrl;
+    let downloadUrl = typeof track.streamUrl === 'string' ? track.streamUrl.trim() : '';
 
     if (isYoutubeTrack) {
-      const downloadId = getTrackSourceId(track);
-      setDownloadJobs((prev) => ({
-        ...prev,
-        [downloadId]: {
-          ...(prev[downloadId] || {}),
-          id: downloadId,
-          title: track.title || 'Untitled',
-          progress: 0,
-          status: 'failed',
-          message: 'YouTube downloads are disabled. Only direct legal source URLs can be downloaded.',
-        },
-      }));
-      if (closeMenu) closeContextMenu();
-      return false;
+      try {
+        const videoId = String(track.videoId || getTrackSourceId(track) || '').replace(/^yt-/, '');
+        const details = videoId
+          ? await youtubeApi.getStreamDetails(videoId, { preferDirect: true })
+          : null;
+        const directUrl = typeof details?.streamUrl === 'string' ? details.streamUrl.trim() : '';
+
+        // Download manager expects a direct media URL, not a DASH/HLS manifest URL.
+        if (directUrl && !/\.mpd(\?|$)|\.m3u8(\?|$)|\/manifests\//i.test(directUrl)) {
+          downloadUrl = directUrl;
+        }
+      } catch {
+        // fall through to failure handling below
+      }
+
+      if (!downloadUrl) {
+        const downloadId = getTrackSourceId(track);
+        setDownloadJobs((prev) => ({
+          ...prev,
+          [downloadId]: {
+            ...(prev[downloadId] || {}),
+            id: downloadId,
+            title: track.title || 'Untitled',
+            progress: 0,
+            status: 'failed',
+            message: 'Could not resolve a direct YouTube audio URL for download right now.',
+          },
+        }));
+        if (closeMenu) closeContextMenu();
+        return false;
+      }
     }
 
     if (!downloadUrl) {
