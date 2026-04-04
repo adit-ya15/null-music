@@ -1,9 +1,0 @@
-https://monochrome-api.samidy.com => FAIL
-https://api.monochrome.tf => FAIL
-https://hifi.geeked.wtf => FAIL
-https://wolf.qqdl.site => FAIL
-https://maus.qqdl.site => FAIL
-https://vogel.qqdl.site => FAIL
-https://katze.qqdl.site => FAIL
-https://hund.qqdl.site => FAIL
-https://tidal.kinoplus.online => FAIL

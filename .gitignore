@@ -12,6 +12,11 @@ dist
 dist-ssr
 .gradle-user/
 *.local
+.cache/
+.mono-probe-results.txt
+.tmp-*.mjs
+android/.gradle/
+android/**/build/
 
 # Editor directories and files
 .vscode/*
