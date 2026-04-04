@@ -77,7 +77,7 @@ const requestYoutube = async (tag, path, options, fallbackMessage) => {
   });
 
   if (result.ok) {
-    return { ok: true, response: result.response, error: null };
+    return { ok: true, response: { data: result.data }, error: null };
   }
 
   const error = new Error(friendlyErrorMessage(null, fallbackMessage));
