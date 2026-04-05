@@ -77,9 +77,10 @@ export default function SearchBar({ onSearch }) {
 
     const myToken = ++fetchTokenRef.current;
     debounceRef.current = setTimeout(async () => {
-      const [saavnRes, ytRes] = await Promise.all([
+      const [saavnRes, ytRes, ytSongsRes] = await Promise.all([
         saavnApi.getSearchSuggestionsSafe(searchTerm),
         youtubeApi.getSearchSuggestionsSafe(searchTerm),
+        youtubeApi.searchSongsSafe(searchTerm, 12),
       ]);
 
       if (!allowSuggestionsRef.current && !force) {
@@ -90,8 +91,15 @@ export default function SearchBar({ onSearch }) {
       }
 
       const merged = [
-        ...(saavnRes.data || []).slice(0, 5),
-        ...(ytRes.data || []).slice(0, 5),
+        ...(saavnRes.data || []).slice(0, 8),
+        ...(ytRes.data || []).slice(0, 8),
+        ...((ytSongsRes.ok ? ytSongsRes.data : []) || []).slice(0, 12).map((track) => ({
+          id: `yt-song-${track.id}`,
+          title: `${track.title}${track.artist ? ` - ${track.artist}` : ''}`,
+          type: 'song',
+          description: track.album || track.artist || '',
+          image: track.coverArt || '',
+        })),
       ].map((item, index) => normalizeSuggestion(item, index)).filter(Boolean);
 
       const unique = [];
@@ -105,8 +113,8 @@ export default function SearchBar({ onSearch }) {
         }
       }
 
-      if (!saavnRes.ok && !ytRes.ok) {
-        const combinedError = [saavnRes.error, ytRes.error].filter(Boolean).join(' | ');
+      if (!saavnRes.ok && !ytRes.ok && !ytSongsRes.ok) {
+        const combinedError = [saavnRes.error, ytRes.error, ytSongsRes.error].filter(Boolean).join(' | ');
         setSuggestionError(combinedError || 'Suggestions are unavailable.');
       } else {
         setSuggestionError(null);

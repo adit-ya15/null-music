@@ -248,10 +248,12 @@ function App() {
     toggleAutoRadio,
     playbackProfile,
     offlineOnlyMode,
+    strictFullTracksMode,
     playbackError,
     reliabilityDebug,
     setPlaybackProfile,
     toggleOfflineOnlyMode,
+    toggleStrictFullTracksMode,
     resumeState,
     resumePlayback,
     clearResumeState,
@@ -923,6 +925,8 @@ function App() {
   useEffect(() => {
     if (reliabilityDebug?.lastFallback?.at) {
       const source = reliabilityDebug.lastFallback.streamSource || 'backup source';
+      const normalizedSource = String(source).trim().toLowerCase();
+      if (normalizedSource.includes('monochrome')) return;
       setPlaybackHint(`Playback recovered via ${source}.`);
       return;
     }
@@ -1227,14 +1231,14 @@ function App() {
 
       const [ytRes, jamendoRes, soundcloudRes, bandcampRes] = await Promise.all([
         youtubeEnabled
-          ? youtubeApi.searchSongsSafe(term, 20)
+          ? youtubeApi.searchSongsSafe(term, 40)
           : Promise.resolve({ ok: false, data: [], error: 'YouTube plugin is disabled.' }),
-        jamendoApi.searchSongsSafe(term, 12),
+        jamendoApi.searchSongsSafe(term, 20),
         soundcloudEnabled
-          ? soundcloudApi.searchSongsSafe(term, 12)
+          ? soundcloudApi.searchSongsSafe(term, 20)
           : Promise.resolve({ ok: false, data: [], error: 'SoundCloud plugin is disabled.' }),
         bandcampEnabled
-          ? bandcampApi.searchSongsSafe(term, 10)
+          ? bandcampApi.searchSongsSafe(term, 20)
           : Promise.resolve({ ok: false, data: [], error: 'Bandcamp plugin is disabled.' }),
       ]);
 
@@ -1243,7 +1247,7 @@ function App() {
         ...(jamendoRes.ok ? (jamendoRes.data || []) : []),
         ...(soundcloudRes.ok ? (soundcloudRes.data || []) : []),
         ...(bandcampRes.ok ? (bandcampRes.data || []) : []),
-      ]).slice(0, 80);
+      ]).slice(0, 150);
 
       if (!combined.length) {
         const normalized = term.toLowerCase();
@@ -1258,7 +1262,7 @@ function App() {
           matchesSearchQuery(track.title, normalized)
           || matchesSearchQuery(track.artist, normalized)
           || matchesSearchQuery(track.album, normalized)
-        )).slice(0, 40);
+        )).slice(0, 80);
 
         if (localFallback.length) {
           setSearchResults(localFallback);
@@ -2756,6 +2760,15 @@ function App() {
           </div>
           <button className={`section-action-btn ${offlineOnlyMode ? 'control-active' : ''}`} onClick={toggleOfflineOnlyMode} type="button">
             {offlineOnlyMode ? 'Enabled' : 'Disabled'}
+          </button>
+        </div>
+        <div className="settings-row">
+          <div className="settings-row-copy">
+            <strong className="settings-row-title">Strict full-length tracks</strong>
+            <span className="settings-row-text">Block preview-only streams and auto-fallback to full-length sources like YouTube.</span>
+          </div>
+          <button className={`section-action-btn ${strictFullTracksMode ? 'control-active' : ''}`} onClick={toggleStrictFullTracksMode} type="button">
+            {strictFullTracksMode ? 'Enabled' : 'Disabled'}
           </button>
         </div>
         <div className="settings-row">

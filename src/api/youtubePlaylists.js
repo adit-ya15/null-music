@@ -6,8 +6,25 @@ export function extractYoutubePlaylistId(value = '') {
   const text = String(value || '').trim();
   if (!text) return '';
 
-  const match = text.match(/[?&]list=([a-zA-Z0-9_-]+)/);
+  const decoded = (() => {
+    try {
+      return decodeURIComponent(text);
+    } catch {
+      return text;
+    }
+  })();
+
+  const match = decoded.match(/(?:[?&]list=|\blist=)([a-zA-Z0-9_-]+)/);
   if (match?.[1]) return match[1];
+
+  try {
+    const parsed = new URL(decoded.startsWith('http') ? decoded : `https://www.youtube.com/playlist?list=${decoded}`);
+    const id = String(parsed.searchParams.get('list') || '').trim();
+    if (id) return id;
+  } catch {
+    // Ignore URL parse failures and continue with raw-id checks.
+  }
+
   if (/^[a-zA-Z0-9_-]{10,}$/.test(text)) return text;
   return '';
 }

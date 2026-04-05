@@ -1445,8 +1445,25 @@ function hasEnv(value) {
 function extractYoutubePlaylistId(value) {
     const text = String(value || "").trim();
     if (!text) return "";
-    const match = text.match(/[?&]list=([a-zA-Z0-9_-]+)/);
+
+    let decoded = text;
+    try {
+        decoded = decodeURIComponent(text);
+    } catch {
+        decoded = text;
+    }
+
+    const match = decoded.match(/(?:[?&]list=|\blist=)([a-zA-Z0-9_-]+)/);
     if (match?.[1]) return String(match[1]).trim();
+
+    try {
+        const parsed = new URL(decoded.startsWith("http") ? decoded : `https://www.youtube.com/playlist?list=${decoded}`);
+        const id = String(parsed.searchParams.get("list") || "").trim();
+        if (id) return id;
+    } catch {
+        // Ignore URL parser failures and continue with raw-id checks.
+    }
+
     if (/^[a-zA-Z0-9_-]{10,}$/.test(text)) return text;
     return "";
 }
@@ -1457,6 +1474,44 @@ function buildLastfmApiSig(params, secret) {
         .sort();
     const raw = keys.map((key) => `${key}${params[key]}`).join("") + secret;
     return createHash("md5").update(raw).digest("hex");
+}
+
+async function fetchPlaylistEntriesFromHtml(playlistId, maxEntries = 120) {
+    const playlistUrl = `https://www.youtube.com/playlist?list=${encodeURIComponent(playlistId)}`;
+    const response = await fetch(playlistUrl, {
+        headers: {
+            "User-Agent": HTTP_UA,
+            "Accept": "text/html,application/xhtml+xml",
+        },
+    });
+
+    if (!response.ok) {
+        throw new Error(`Playlist page responded with ${response.status}`);
+    }
+
+    const html = await response.text();
+    const idMatches = html.matchAll(/"videoId":"([\\w-]{11})"/g);
+    const ids = [];
+    const seen = new Set();
+
+    for (const match of idMatches) {
+        const id = String(match?.[1] || "").trim();
+        if (!id || seen.has(id)) continue;
+        seen.add(id);
+        ids.push(id);
+        if (ids.length >= maxEntries) break;
+    }
+
+    const titleMatch = html.match(/<title>([^<]+)<\/title>/i);
+    const rawTitle = String(titleMatch?.[1] || "").trim();
+    const title = rawTitle
+        ? rawTitle.replace(/\s*-\s*YouTube\s*$/i, '').trim()
+        : null;
+
+    return {
+        title,
+        entries: ids.map((videoId) => ({ videoId, title: null, duration: null, channel: null })),
+    };
 }
 
 async function getSpotifyAccessToken() {
@@ -1651,7 +1706,7 @@ app.get("/api/plugins/youtube-playlist", async (req, res) => {
         playlistUrl,
     ];
 
-    try {
+    const tryYtdlp = async () => {
         const { proc, done } = spawnWithTimeout(YT_DLP_BIN, args, {
             timeoutMs: Math.max(4_000, Number(process.env.YT_PLAYLIST_IMPORT_TIMEOUT_MS || 20_000)),
         });
@@ -1669,23 +1724,46 @@ app.get("/api/plugins/youtube-playlist", async (req, res) => {
 
         const { code } = await done;
         if (code !== 0) {
-            return res.status(502).json({ ok: false, error: "Playlist import failed.", details: stderr.slice(-4000) });
+            throw new Error(stderr.slice(-4000) || "yt-dlp playlist import failed");
         }
 
         const payload = JSON.parse(stdout || "{}");
-        const entries = (Array.isArray(payload?.entries) ? payload.entries : [])
+        return {
+            title: String(payload?.title || "").trim() || null,
+            entries: (Array.isArray(payload?.entries) ? payload.entries : [])
             .map((entry) => ({
                 videoId: String(entry?.id || "").trim(),
                 title: String(entry?.title || "").trim() || null,
                 duration: Number(entry?.duration || 0) || null,
                 channel: String(entry?.channel || entry?.uploader || "").trim() || null,
             }))
-            .filter((entry) => entry.videoId);
+            .filter((entry) => entry.videoId),
+        };
+    };
+
+    try {
+        let imported = null;
+
+        try {
+            imported = await tryYtdlp();
+        } catch (ytdlpError) {
+            logger.warn("plugins", "yt-dlp playlist import failed, trying HTML fallback", {
+                playlistId,
+                error: ytdlpError?.message,
+            });
+
+            imported = await fetchPlaylistEntriesFromHtml(playlistId, maxEntries);
+        }
+
+        const entries = Array.isArray(imported?.entries) ? imported.entries.filter((entry) => entry?.videoId) : [];
+        if (!entries.length) {
+            return res.status(502).json({ ok: false, error: "Playlist import returned no tracks." });
+        }
 
         return res.json({
             ok: true,
             playlistId,
-            title: String(payload?.title || "").trim() || null,
+            title: imported?.title || null,
             entries,
         });
     } catch (error) {

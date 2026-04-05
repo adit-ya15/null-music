@@ -1578,7 +1578,7 @@ button { border: none; background: transparent; cursor: pointer; font-family: in
 .mobile-player-wrapper {
     display: block;
     position: fixed;
-    bottom: var(--bottom-nav-height);
+    bottom: calc(var(--bottom-nav-height) - 4px);
     left: 0;
     right: 0;
     z-index: 1000;
@@ -1587,7 +1587,7 @@ button { border: none; background: transparent; cursor: pointer; font-family: in
 
 /* ── Mini Player ── */
 .mobile-mini-player {
-    margin: 6px 8px;
+    margin: 2px 8px;
     border-radius: var(--radius-md);
     overflow: hidden;
     position: relative;

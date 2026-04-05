@@ -62,6 +62,7 @@ const PLAYER_SESSION_STORAGE_KEY = "aura-player-session";
 const AUTO_RADIO_STORAGE_KEY = "aura-auto-radio";
 const PLAYBACK_PROFILE_STORAGE_KEY = "aura-playback-profile";
 const OFFLINE_ONLY_STORAGE_KEY = "aura-offline-only";
+const STRICT_FULL_TRACKS_STORAGE_KEY = "aura-strict-full-tracks";
 const RESUME_STORAGE_KEY = "aura-resume-state";
 const TASTE_PROFILE_STORAGE_KEY = "aura-taste-profile";
 const RECO_NOISE_TOKENS = new Set([
@@ -216,7 +217,11 @@ function scoreRecommendation(seedTrack, candidate) {
     ? -0.2
     : 0;
 
-  return (overlapScore * 0.72) + (artistOverlap * 0.28) + scriptBonus + scriptPenalty;
+  const sameArtist = normalizeRecoText(seedTrack?.artist || '')
+    && normalizeRecoText(seedTrack?.artist || '') === normalizeRecoText(candidate?.artist || '');
+  const sameArtistPenalty = sameArtist ? -0.22 : 0;
+
+  return (overlapScore * 0.86) + (artistOverlap * 0.14) + scriptBonus + scriptPenalty + sameArtistPenalty;
 }
 
 function rankRecommendationCandidates(seedTrack, candidates, options = {}) {
@@ -238,11 +243,13 @@ function rankRecommendationCandidates(seedTrack, candidates, options = {}) {
   const picked = (relevant.length > 0 ? relevant : ranked.slice(0, minimumCount)).slice(0, maxCount);
 
   const artistCounts = new Map();
+  const seedArtistKey = normalizeRecoText(seedTrack?.artist || '');
   const diversified = [];
   for (const item of picked) {
     const artistKey = normalizeRecoText(item.track?.artist || 'unknown');
     const count = artistCounts.get(artistKey) || 0;
-    if (count >= 3) continue;
+    if (artistKey === seedArtistKey && count >= 1) continue;
+    if (count >= 2) continue;
     artistCounts.set(artistKey, count + 1);
     diversified.push(item.track);
     if (diversified.length >= maxCount) break;
@@ -259,9 +266,11 @@ function buildSimilarityQueries(seedTrack) {
 
   if (title && artist) queries.add(`${title} ${artist}`.trim());
   if (title && album) queries.add(`${title} ${album}`.trim());
-  if (artist) queries.add(`${artist} popular songs`);
+  if (title && artist) queries.add(`${title} ${artist} radio`);
+  if (artist) queries.add(`artists similar to ${artist}`);
   if (artist && title) queries.add(`${artist} songs like ${title}`);
   if (title) queries.add(`${title} similar songs`);
+  if (title) queries.add(`songs like ${title}`);
 
   return [...queries].filter(Boolean);
 }
@@ -309,6 +318,18 @@ function adjustRecommendationWithTaste(track, profile) {
   const penalty = Math.min(0.32, skippedArtist * 0.04) + Math.min(0.3, skippedTrack * 0.06);
 
   return affinityBoost - penalty;
+}
+
+function isLikelyPreviewStream(track, streamUrl = '') {
+  const url = String(streamUrl || '').toLowerCase();
+  const source = String(track?.source || '').toLowerCase();
+  const duration = Number(track?.duration || 0);
+
+  if (!url) return false;
+  if (source === 'deezer') return true;
+  if (url.includes('preview') || url.includes('cdn-preview')) return true;
+  if (duration > 0 && duration <= 35 && (source === 'deezer' || source === 'soundcloud')) return true;
+  return false;
 }
 
 async function resolveRecommendationAnchorTrack(seedTrack) {
@@ -377,6 +398,14 @@ export const PlayerProvider = ({ children }) => {
       return localStorage.getItem(OFFLINE_ONLY_STORAGE_KEY) === "true";
     } catch {
       return false;
+    }
+  });
+  const [strictFullTracksMode, setStrictFullTracksMode] = useState(() => {
+    try {
+      const stored = localStorage.getItem(STRICT_FULL_TRACKS_STORAGE_KEY);
+      return stored == null ? true : stored === "true";
+    } catch {
+      return true;
     }
   });
   const [sleepTimerMinutes, setSleepTimerMinutes] = useState(null);
@@ -637,6 +666,54 @@ export const PlayerProvider = ({ children }) => {
         return resolved;
       }
 
+      if (isLikelyPreviewStream(track, existingUrl) || track.source === 'deezer' || track.source === 'listenbrainz') {
+        let upgradedToFullTrack = false;
+        try {
+          const query = `${String(track?.title || '').trim()} ${String(track?.artist || '').trim()}`.trim();
+          if (query) {
+            const ytCandidates = await youtubeApi.searchSongsSafe(query, 8);
+            if (ytCandidates.ok && Array.isArray(ytCandidates.data) && ytCandidates.data.length > 0) {
+              const rankedCandidates = rankRecommendationCandidates(track, ytCandidates.data, {
+                minScore: 0.15,
+                minimumCount: 1,
+                maxCount: 3,
+              });
+              const winner = rankedCandidates[0] || ytCandidates.data[0];
+              const resolvedYoutube = await musicSources.youtube.getStreamUrl(winner, {
+                preferDirect: isNative,
+              });
+
+              if (resolvedYoutube?.streamUrl) {
+                const resolved = mergeResolvedTrack(track, {
+                  streamUrl: resolvedYoutube.streamUrl,
+                  streamSource: resolvedYoutube.streamSource || 'yt-dlp',
+                  cacheState: resolvedYoutube.cacheState || null,
+                  streamResolvedAt: Date.now(),
+                });
+
+                if (record) {
+                  recordReliabilityEvent('fallback', {
+                    trackId: track.id,
+                    title: track.title,
+                    streamSource: resolved.streamSource || 'yt-dlp',
+                    message: 'Replaced preview-only source with full-length YouTube stream.',
+                  });
+                }
+
+                upgradedToFullTrack = true;
+                return resolved;
+              }
+            }
+          }
+        } catch {
+          // Ignore preview replacement failures; continue with existing source fallback.
+        }
+
+        if (strictFullTracksMode && !upgradedToFullTrack) {
+          throw new Error('Preview-only stream blocked. Full track fallback unavailable right now.');
+        }
+      }
+
       if (!existingUrl) throw new Error("Stream unavailable");
       const resolved = mergeResolvedTrack(track, {
         streamUrl: existingUrl,
@@ -691,7 +768,7 @@ export const PlayerProvider = ({ children }) => {
       }
     }
     return resolved;
-  }, [getResolvedTrackFromCache, mergeResolvedTrack, musicSources.jamendo, musicSources.soundcloud, musicSources.youtube, offlineOnlyMode, recordReliabilityEvent]);
+  }, [getResolvedTrackFromCache, mergeResolvedTrack, musicSources.jamendo, musicSources.soundcloud, musicSources.youtube, offlineOnlyMode, recordReliabilityEvent, strictFullTracksMode]);
 
   /** Pre-resolve stream URL for a track (used for gapless preloading). */
   const preResolveStream = useCallback(async (track) => {
@@ -1246,6 +1323,10 @@ export const PlayerProvider = ({ children }) => {
     setOfflineOnlyModeState((previous) => !previous);
   }, []);
 
+  const toggleStrictFullTracksMode = useCallback(() => {
+    setStrictFullTracksMode((previous) => !previous);
+  }, []);
+
   const clearResumeState = useCallback(() => {
     setResumeState(null);
     resumeSeekRef.current = null;
@@ -1325,6 +1406,14 @@ export const PlayerProvider = ({ children }) => {
       // ignore storage failures
     }
   }, [offlineOnlyMode]);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(STRICT_FULL_TRACKS_STORAGE_KEY, String(strictFullTracksMode));
+    } catch {
+      // ignore storage failures
+    }
+  }, [strictFullTracksMode]);
 
   useEffect(() => () => {
     clearPlaybackRecovery();
@@ -1839,6 +1928,7 @@ export const PlayerProvider = ({ children }) => {
     autoRadioEnabled,
     playbackProfile,
     offlineOnlyMode,
+    strictFullTracksMode,
     sleepTimerMinutes,
     resumeState,
     equalizerState,
@@ -1857,6 +1947,7 @@ export const PlayerProvider = ({ children }) => {
     setPlaybackProfile,
     cyclePlaybackProfile,
     toggleOfflineOnlyMode,
+    toggleStrictFullTracksMode,
     getRecommendationsFor,
     refreshEqualizerState,
     setEqualizerEnabled,
