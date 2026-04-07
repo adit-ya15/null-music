@@ -1,70 +1,70 @@
-# Aura Music
+# Null
 
-Aura Music is an Android-first music player built with React, Vite, Capacitor, and a Node.js streaming backend. The app focuses on fast playback, resilient fallback behavior, offline downloads, personalized recommendations, background playback, widget support, synced lyrics when available, and native Android media controls.
+Open-source, Android-first music player focused on speed, resilient playback, and offline continuity.
 
-## Features
+## Highlights
 
-- Background playback with lockscreen and notification controls
-- Faster replay and skip behavior with resolved stream reuse
-- Android home-screen widget and native equalizer presets
-- Email login/signup plus free email OTP auth through Supabase
-- Synced likes, playlists, and recent listening per account
-- Song radio and personalized recommendation fallbacks
-- Offline downloads with in-app download management
-- Continue listening, playback quality profiles, offline-only mode, and smart downloads
-- Playlist rename/delete/reorder controls and library import/export
-- Synced lyrics support when timed lyrics are available
-- Local fallback mixes built from downloads, favorites, and recent plays
+- Fast search and metadata-rich discovery
+- Fallback-aware playback pipeline for reliability
+- Queue controls, smart dedupe, and queue optimization
+- Offline downloads and resume state handling
+- Lyrics, equalizer hooks, and Android media controls
+- Account sync for favorites, playlists, and recent listening
 
-## Repo Layout
+## Screenshots
 
-- `src/`: React app UI and player state
-- `android/`: Capacitor Android shell and native media plugin
-- `backend/`: cache and provider helpers used by the API server
-- `server.mjs`: Express API for search, playback, lyrics, downloads, and recommendations
-- `tests/`: Node test coverage for shared logic
-- `flutter-template/`: separate Flutter UI scaffold kept outside the main shipping app
+| Home | Search | Queue |
+| --- | --- | --- |
+| ![Home](./screenshots/Screenshot_2026-04-06-01-02-22-34_917bf2ce991166cdda6fa7069f598386.jpg) | ![Search](./screenshots/Screenshot_2026-04-06-01-02-49-80_917bf2ce991166cdda6fa7069f598386.jpg) | ![Queue](./screenshots/Screenshot_2026-04-06-01-04-13-03_917bf2ce991166cdda6fa7069f598386.jpg) |
+
+| Library | Playback | Features |
+| --- | --- | --- |
+| ![Library](./screenshots/Screenshot_2026-04-06-01-03-10-01_917bf2ce991166cdda6fa7069f598386.jpg) | ![Playback](./screenshots/Screenshot_2026-04-06-01-03-53-55_917bf2ce991166cdda6fa7069f598386.jpg) | ![Features](./screenshots/Screenshot_2026-04-06-01-04-35-28_917bf2ce991166cdda6fa7069f598386.jpg) |
+
+## Tech Stack
+
+- Frontend: React + Vite
+- Android shell: Capacitor
+- Backend API: Node.js + Express
+- Android native playback modules in android/
+
+## Repository Layout
+
+- src/: React app and player state management
+- android/: Capacitor Android shell and native integration
+- backend/: provider, resolver, cache, auth, and utility modules
+- server.mjs: API server entry point
+- shared/: shared helpers used by multiple modules
+- tests/: unit and integration tests
 
 ## Local Development
 
-Install dependencies:
+### Prerequisites
 
-```bash
+- Node.js 22+
+- npm 10+
+- Java 21 (for Android builds)
+- Android SDK (for device builds)
+
+### Install and Run
+
+```powershell
 npm install
-```
-
-Run the backend:
-
-```bash
 npm run server
-```
-
-Run the web UI:
-
-```bash
 npm run dev
 ```
 
-Verify the project:
+### Verify
 
-```bash
+```powershell
 npm run lint
 npm test
 npm run build
 ```
 
-## Android App
+## Android Build
 
-Build the web assets first, then assemble the Android app:
-
-```bash
-npm run build
-npx cap sync android
-cd android
-./gradlew assembleDebug
-```
-
-For Windows PowerShell:
+### Debug APK
 
 ```powershell
 npm run build
@@ -73,49 +73,52 @@ cd android
 .\gradlew.bat assembleDebug
 ```
 
+Output:
+
+- android/app/build/outputs/apk/debug/app-debug.apk
+
+### Release Build
+
+Read full guide first:
+
+- [RELEASE_AND_UPDATE_GUIDE.md](./RELEASE_AND_UPDATE_GUIDE.md)
+
+## Release and Update Docs
+
+- [RELEASE_AND_UPDATE_GUIDE.md](./RELEASE_AND_UPDATE_GUIDE.md)
+- [OPEN_SOURCE_RELEASE_CHECKLIST.md](./OPEN_SOURCE_RELEASE_CHECKLIST.md)
+- [CHANGELOG.md](./CHANGELOG.md)
+
+## Architecture and Security
+
+- [ARCHITECTURE.md](./ARCHITECTURE.md)
+- [SECURITY.md](./SECURITY.md)
+- [PRIVACY.md](./PRIVACY.md)
+
+## Open Source Project Docs
+
+- [CONTRIBUTING.md](./CONTRIBUTING.md)
+- [CODE_OF_CONDUCT.md](./CODE_OF_CONDUCT.md)
+- [ROADMAP.md](./ROADMAP.md)
+
+## Public Showcase Website
+
+- Source files: [public/showcase/index.html](./public/showcase/index.html)
+- Local URL: http://localhost:5173/showcase/index.html
+
 ## Environment
 
-Useful local settings live in `.env.example`.
+Use:
 
-Production-safe defaults live in `.env.production.example`.
+- .env.example for local setup
+- .env.production.example for production defaults
 
-Important environment variables:
+Keep secrets out of git. Never commit:
 
-- `VITE_API_BASE`: frontend API base URL
-- `VITE_EMAIL_OTP_ENABLED`: optional UI kill-switch for the email OTP flow
-- `RECO_API_KEY`: protects recommendation endpoints in production
-- `AUTH_TOKEN_SECRET`: signs login sessions for account sync
-- `SUPABASE_URL`, `SUPABASE_ANON_KEY`: required for Supabase email OTP
-- `SUPABASE_EMAIL_REDIRECT_TO`: optional redirect for magic-link emails
-- `REDIS_URL`: optional Redis cache for production reliability
-- `YT_DLP_BIN`: path to `yt-dlp`
-- `YT_COOKIES_FILE`: optional absolute path to a local cookies export kept outside the repo
-- `YTDLP_AUTO_UPDATE_ENABLED`: enables background yt-dlp self-updates (default weekly)
-- `YTDLP_AUTO_UPDATE_INTERVAL_MS`: update cadence in milliseconds (default: 7 days)
-
-## Production Notes
-
-- Put the backend behind HTTPS and set `TRUST_PROXY` correctly.
-- Keep cookies files, API keys, and signing materials out of Git.
-- Set `AUTH_TOKEN_SECRET` explicitly before shipping public builds.
-- Configure Supabase Auth email templates to send an OTP code if you want code-based login instead of only a magic link.
-- Add Redis for cache durability across restarts.
-- Test real-device behavior for weak network, offline playback, queue advance, and download recovery.
-- Create signed Android release builds before distribution.
-
-## Platform Support
-
-- Android app: primary target with widget, equalizer, downloads, and native media integration
-- Web preview: useful for development and UI checks, with graceful fallbacks where native APIs are unavailable
-
-## Open Source Docs
-
-- [Contributing](./CONTRIBUTING.md)
-- [Code of Conduct](./CODE_OF_CONDUCT.md)
-- [Security Policy](./SECURITY.md)
-- [Privacy Notes](./PRIVACY.md)
-- [Roadmap](./ROADMAP.md)
-- [Release Checklist](./OPEN_SOURCE_RELEASE_CHECKLIST.md)
+- .env values
+- cookies files
+- android keystore credentials
+- android/keystore.properties
 
 ## License
 
