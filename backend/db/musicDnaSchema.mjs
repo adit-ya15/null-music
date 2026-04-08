@@ -18,20 +18,32 @@ export async function initializeMusicDNASchema(pool) {
         created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
         updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
       );
+    `);
 
+    await client.query(`
       CREATE INDEX IF NOT EXISTS idx_user_dna_profiles_user_id ON user_dna_profiles(user_id);
+    `);
+
+    await client.query(`
       CREATE INDEX IF NOT EXISTS idx_user_dna_profiles_calculated_at ON user_dna_profiles(calculated_at);
     `);
 
-    // Add features column to tracks table if not exists
-    await client.query(`
-      ALTER TABLE IF EXISTS tracks 
-      ADD COLUMN IF NOT EXISTS features JSONB;
+    // Try to add features column to tracks table if it exists
+    try {
+      await client.query(`
+        ALTER TABLE tracks 
+        ADD COLUMN IF NOT EXISTS features JSONB;
+      `);
+      
+      await client.query(`
+        CREATE INDEX IF NOT EXISTS idx_tracks_features ON tracks USING GIN (features);
+      `);
+    } catch (err) {
+      // Tracks table may not exist, which is fine for Music DNA feature
+      console.log('[Aura] Note: tracks table not found, skipping features column');
+    }
 
-      CREATE INDEX IF NOT EXISTS idx_tracks_features ON tracks USING GIN (features);
-    `);
-
-    // Update user_tracks to store features
+    // Create user_tracks to store features
     await client.query(`
       CREATE TABLE IF NOT EXISTS user_tracks (
         id SERIAL PRIMARY KEY,
@@ -45,12 +57,20 @@ export async function initializeMusicDNASchema(pool) {
         updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
         UNIQUE(user_id, track_id)
       );
+    `);
 
+    await client.query(`
       CREATE INDEX IF NOT EXISTS idx_user_tracks_user_id ON user_tracks(user_id);
+    `);
+
+    await client.query(`
       CREATE INDEX IF NOT EXISTS idx_user_tracks_completion ON user_tracks(completion_ratio);
     `);
 
     console.log('✓ Music DNA schema initialized successfully');
+  } catch (err) {
+    console.error('[Aura][Error initializing Music DNA schema:]', err.message);
+    throw err;
   } finally {
     client.release();
   }

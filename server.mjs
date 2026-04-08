@@ -3,6 +3,8 @@
 // YouTube Music backend using youtubei.js + yt-dlp
 // ═══════════════════════════════════════════════════════
 
+import 'dotenv/config.js';
+
 import express from "express";
 import { Innertube } from "youtubei.js";
 import path from "path";
@@ -35,6 +37,8 @@ import { metrics } from "./backend/lib/metrics.mjs";
 import { scheduleYtdlpAutoUpdate } from "./backend/lib/ytdlpAutoUpdate.mjs";
 import { getRecommendations, trackUserAction } from "./backend/reco/recommendations.mjs";
 import { calculateUserDNA, getUserDNA, findSonicTwins, invalidateUserDNA } from "./backend/reco/musicDna.mjs";
+import { initializeMusicDNASchema } from "./backend/db/musicDnaSchema.mjs";
+import { pool } from "./backend/db/postgres.mjs";
 import { normalizeLibraryPayload } from "./shared/userLibrary.js";
 
 const PORT = process.env.PORT || 3001;
@@ -1795,6 +1799,16 @@ app.get("/api/user/dna", requireAuth, async (req, res) => {
         res.json({ ok: true, dna });
     } catch (error) {
         logger.error("Error fetching user DNA:", error);
+        
+        // Check if it's a database connection error
+        if (error?.code === 'ECONNREFUSED' || error?.message?.includes('does not exist')) {
+            return res.status(503).json({ 
+                error: "Music DNA feature is temporarily unavailable",
+                reason: "database_not_configured",
+                hint: "Please set DATABASE_URL environment variable or ensure PostgreSQL is running on localhost:5432"
+            });
+        }
+        
         res.status(500).json({ error: "Failed to fetch DNA profile" });
     }
 });
@@ -1814,6 +1828,16 @@ app.post("/api/user/dna/refresh", requireAuth, async (req, res) => {
         res.json({ ok: true, dna });
     } catch (error) {
         logger.error("Error calculating user DNA:", error);
+        
+        // Check if it's a database connection error
+        if (error?.code === 'ECONNREFUSED' || error?.message?.includes('does not exist')) {
+            return res.status(503).json({ 
+                error: "Music DNA feature is temporarily unavailable",
+                reason: "database_not_configured",
+                hint: "Please set DATABASE_URL environment variable or ensure PostgreSQL is running on localhost:5432"
+            });
+        }
+        
         res.status(500).json({ error: "Failed to calculate DNA profile" });
     }
 });
@@ -1835,6 +1859,16 @@ app.get("/api/user/sonic-twins", requireAuth, async (req, res) => {
         res.json({ ok: true, sonicTwins: twins });
     } catch (error) {
         logger.error("Error finding sonic twins:", error);
+        
+        // Check if it's a database connection error
+        if (error?.code === 'ECONNREFUSED' || error?.message?.includes('does not exist')) {
+            return res.status(503).json({ 
+                error: "Music DNA feature is temporarily unavailable",
+                reason: "database_not_configured",
+                hint: "Please set DATABASE_URL environment variable or ensure PostgreSQL is running on localhost:5432"
+            });
+        }
+        
         res.status(500).json({ error: "Failed to find sonic twins" });
     }
 });
@@ -1859,6 +1893,11 @@ app.get(/^(?!\/api).*/, (req, res) => {
 
 app.listen(PORT, "0.0.0.0", () => {
     console.log(`Aura server running on port ${PORT}`);
+
+    // Initialize Music DNA schema
+    initializeMusicDNASchema(pool).catch((err) => {
+        console.error("[Aura][Error initializing Music DNA schema:]", err?.message || err);
+    });
 
     scheduleYtdlpAutoUpdate(YT_DLP_BIN);
 
