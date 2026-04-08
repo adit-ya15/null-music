@@ -1786,7 +1786,7 @@ app.get("/api/plugins/youtube-playlist", async (req, res) => {
  */
 app.get("/api/user/dna", requireAuth, async (req, res) => {
     try {
-        const userId = req.user?.id;
+        const userId = req.auth?.user?.id;
         if (!userId) {
             return res.status(401).json({ error: "Unauthorized" });
         }
@@ -1805,7 +1805,7 @@ app.get("/api/user/dna", requireAuth, async (req, res) => {
  */
 app.post("/api/user/dna/refresh", requireAuth, async (req, res) => {
     try {
-        const userId = req.user?.id;
+        const userId = req.auth?.user?.id;
         if (!userId) {
             return res.status(401).json({ error: "Unauthorized" });
         }
@@ -1824,7 +1824,7 @@ app.post("/api/user/dna/refresh", requireAuth, async (req, res) => {
  */
 app.get("/api/user/sonic-twins", requireAuth, async (req, res) => {
     try {
-        const userId = req.user?.id;
+        const userId = req.auth?.user?.id;
         if (!userId) {
             return res.status(401).json({ error: "Unauthorized" });
         }
