@@ -34,6 +34,7 @@ import { logger } from "./backend/lib/logger.mjs";
 import { metrics } from "./backend/lib/metrics.mjs";
 import { scheduleYtdlpAutoUpdate } from "./backend/lib/ytdlpAutoUpdate.mjs";
 import { getRecommendations, trackUserAction } from "./backend/reco/recommendations.mjs";
+import { calculateUserDNA, getUserDNA, findSonicTwins, invalidateUserDNA } from "./backend/reco/musicDna.mjs";
 import { normalizeLibraryPayload } from "./shared/userLibrary.js";
 
 const PORT = process.env.PORT || 3001;
@@ -1772,6 +1773,69 @@ app.get("/api/plugins/youtube-playlist", async (req, res) => {
             error: error?.message,
         });
         return res.status(502).json({ ok: false, error: "YouTube playlist import unavailable." });
+    }
+});
+
+// ─────────────────────────────────────────────
+// Music DNA endpoints
+// ─────────────────────────────────────────────
+
+/**
+ * GET /api/user/dna
+ * Get user's music DNA profile
+ */
+app.get("/api/user/dna", requireAuth, async (req, res) => {
+    try {
+        const userId = req.user?.id;
+        if (!userId) {
+            return res.status(401).json({ error: "Unauthorized" });
+        }
+
+        const dna = await getUserDNA(userId);
+        res.json({ ok: true, dna });
+    } catch (error) {
+        logger.error("Error fetching user DNA:", error);
+        res.status(500).json({ error: "Failed to fetch DNA profile" });
+    }
+});
+
+/**
+ * POST /api/user/dna/refresh
+ * Recalculate user's music DNA
+ */
+app.post("/api/user/dna/refresh", requireAuth, async (req, res) => {
+    try {
+        const userId = req.user?.id;
+        if (!userId) {
+            return res.status(401).json({ error: "Unauthorized" });
+        }
+
+        const dna = await calculateUserDNA(userId);
+        res.json({ ok: true, dna });
+    } catch (error) {
+        logger.error("Error calculating user DNA:", error);
+        res.status(500).json({ error: "Failed to calculate DNA profile" });
+    }
+});
+
+/**
+ * GET /api/user/sonic-twins
+ * Get sonic twin artists recommendations
+ */
+app.get("/api/user/sonic-twins", requireAuth, async (req, res) => {
+    try {
+        const userId = req.user?.id;
+        if (!userId) {
+            return res.status(401).json({ error: "Unauthorized" });
+        }
+
+        const limit = Math.min(50, Math.max(5, Number(req.query?.limit || 10)));
+        const twins = await findSonicTwins(userId, limit);
+        
+        res.json({ ok: true, sonicTwins: twins });
+    } catch (error) {
+        logger.error("Error finding sonic twins:", error);
+        res.status(500).json({ error: "Failed to find sonic twins" });
     }
 });
 
