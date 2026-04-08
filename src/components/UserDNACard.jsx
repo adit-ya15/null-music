@@ -1,43 +1,42 @@
-import React, { useRef } from 'react';
+import React from 'react';
 
 /**
  * UserDNACard Component
  * Displays a shareable card view of the user's music DNA
  */
 export function UserDNACard({ dna }) {
-  const cardRef = useRef(null);
-
   if (!dna) return null;
 
   const topGenres = dna.genres?.slice(0, 3)?.map(g => g.genre).join(', ') || 'Various';
   const vibe = getMainVibe(dna);
+  const shareText = [
+    'My Music DNA',
+    `Top genres: ${topGenres}`,
+    `Vibe: ${vibe}`,
+    `Tracks analyzed: ${dna.trackCount || 0}`,
+  ].join('\n');
 
   async function handleShare() {
     try {
-      // Convert card to image
-      const canvas = await html2canvas(cardRef.current);
-      const image = canvas.toDataURL('image/png');
-
-      // Copy to clipboard or share
-      if (navigator.share && navigator.canShare({ files: [canvas.toBlob()] })) {
-        navigator.share({
+      if (navigator.share) {
+        await navigator.share({
           title: 'My Music DNA',
-          text: `Check out my music DNA profile! ${topGenres}`,
-          files: [new File([canvas], 'music-dna.png', { type: 'image/png' })],
+          text: shareText,
         });
-      } else {
-        // Fallback: Just save to clipboard or show download option
-        showDownloadOption(image);
+        return;
       }
+
+      await navigator.clipboard?.writeText(shareText);
+      showDownloadOption(shareText);
     } catch (error) {
       console.error('Error sharing DNA card:', error);
-      alert('Could not share DNA card');
+      showDownloadOption(shareText);
     }
   }
 
   return (
     <div className="dna-card-container">
-      <div ref={cardRef} className="dna-card">
+      <div className="dna-card">
         <div className="card-header">
           <h2>🧬 My Music DNA</h2>
         </div>
@@ -138,20 +137,30 @@ function getMoodEmoji(valence) {
  * Handle downloading DNA card as image
  */
 function handleDownload() {
+  const data = JSON.stringify({
+    title: 'My Music DNA',
+    generatedAt: new Date().toISOString(),
+  }, null, 2);
+  const blob = new Blob([data], { type: 'application/json' });
   const link = document.createElement('a');
-  link.href = '#';
-  link.download = 'my-music-dna.png';
+  link.href = URL.createObjectURL(blob);
+  link.download = 'my-music-dna.json';
+  document.body.appendChild(link);
   link.click();
+  document.body.removeChild(link);
+  URL.revokeObjectURL(link.href);
 }
 
 /**
  * Show download option (fallback)
  */
-function showDownloadOption(imageData) {
+function showDownloadOption(textData) {
   const link = document.createElement('a');
-  link.href = imageData;
-  link.download = 'my-music-dna.png';
+  const blob = new Blob([textData], { type: 'text/plain' });
+  link.href = URL.createObjectURL(blob);
+  link.download = 'my-music-dna.txt';
   document.body.appendChild(link);
   link.click();
   document.body.removeChild(link);
+  URL.revokeObjectURL(link.href);
 }

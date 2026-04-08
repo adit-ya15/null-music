@@ -11,6 +11,54 @@ Open-source, Android-first music player focused on speed, resilient playback, an
 - Lyrics, equalizer hooks, and Android media controls
 - Account sync for favorites, playlists, and recent listening
 
+## Features
+
+### Core Playback
+
+- Search, stream, and play music from multiple sources
+- Queue management with next, previous, shuffle, and insert-next controls
+- Playback resume state so users can continue where they left off
+- Offline download support for saved tracks
+- Reliability fallbacks when a source is unavailable
+
+### Library and Discovery
+
+- Favorites, playlists, recently played, and most-played views
+- Personalized sections such as Made For You and trending mixes
+- Search filters for songs, artists, albums, and playlists
+- Download management and local library organization
+- Radio-style station playback for quick discovery
+
+### Listening Experience
+
+- Lyrics view and equalizer integration hooks
+- Android media controls and native playback support
+- Playback profiles for data saver, balanced, and instant modes
+- Auto-radio and queue optimization helpers
+- Theme switching and mobile-first layout handling
+
+### Account and Sync
+
+- Sign up, login, and session persistence
+- Favorites and playlist syncing across devices
+- Listening history and library state persistence
+- Feedback and issue reporting flows
+
+### Music DNA
+
+- Personalized Music DNA profile based on listening history
+- Animated DNA helix visualization
+- Genre, mood, tempo, acousticness, and decade analysis
+- Sonic Twins recommendations for similar artists
+- Shareable DNA card for social posting and discovery
+
+### Platform and Reliability
+
+- Android-first Capacitor shell with web fallback
+- Backend fallback routes and metadata proxying
+- Download and cache-aware architecture
+- Rate limiting, auth, and request timeout protections
+
 ## Screenshots
 
 | Home | Search | Queue |

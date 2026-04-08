@@ -3,6 +3,7 @@ import { DNAHelix } from './DNAHelix';
 import { GenreBreakdown } from './GenreBreakdown';
 import { SonicTwins } from './SonicTwins';
 import { UserDNACard } from './UserDNACard';
+import './musicDna.css';
 
 /**
  * DNAProfile Component
