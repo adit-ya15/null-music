@@ -59,12 +59,28 @@ export async function initializeMusicDNASchema(pool) {
       );
     `);
 
+    // Ensure existing installations are upgraded when user_tracks already exists.
+    await client.query(`ALTER TABLE user_tracks ADD COLUMN IF NOT EXISTS title TEXT;`);
+    await client.query(`ALTER TABLE user_tracks ADD COLUMN IF NOT EXISTS artist TEXT;`);
+    await client.query(`ALTER TABLE user_tracks ADD COLUMN IF NOT EXISTS features JSONB;`);
+    await client.query(`ALTER TABLE user_tracks ADD COLUMN IF NOT EXISTS completion_ratio NUMERIC DEFAULT 0;`);
+    await client.query(`ALTER TABLE user_tracks ADD COLUMN IF NOT EXISTS play_count INTEGER DEFAULT 1;`);
+    await client.query(`ALTER TABLE user_tracks ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP;`);
+
     await client.query(`
       CREATE INDEX IF NOT EXISTS idx_user_tracks_user_id ON user_tracks(user_id);
     `);
 
     await client.query(`
       CREATE INDEX IF NOT EXISTS idx_user_tracks_completion ON user_tracks(completion_ratio);
+    `);
+
+    await client.query(`
+      CREATE INDEX IF NOT EXISTS idx_user_tracks_artist ON user_tracks(artist);
+    `);
+
+    await client.query(`
+      CREATE INDEX IF NOT EXISTS idx_user_tracks_features ON user_tracks USING GIN (features);
     `);
 
     console.log('✓ Music DNA schema initialized successfully');

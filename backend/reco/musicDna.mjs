@@ -28,15 +28,32 @@ const DEFAULT_TRACK_FEATURES = {
 export async function calculateUserDNA(userId) {
   try {
     // Get user's play history (completed/mostly-played tracks)
-    const historyResult = await query(
-      `SELECT track_id, title, artist, features, completion_ratio 
-       FROM user_tracks 
-       WHERE user_id = $1 
-       AND completion_ratio > 0.3
-       ORDER BY updated_at DESC 
-       LIMIT 500`,
-      [userId]
-    );
+    let historyResult;
+    try {
+      historyResult = await query(
+        `SELECT track_id, title, artist, features, completion_ratio 
+         FROM user_tracks 
+         WHERE user_id = $1 
+         AND completion_ratio > 0.3
+         ORDER BY updated_at DESC 
+         LIMIT 500`,
+        [userId]
+      );
+    } catch (error) {
+      // Backward compatibility with older user_tracks schema where features/completion_ratio may be missing.
+      if (error?.code === '42703') {
+        historyResult = await query(
+          `SELECT track_id, title, artist, NULL::jsonb AS features, 1::numeric AS completion_ratio
+           FROM user_tracks
+           WHERE user_id = $1
+           ORDER BY updated_at DESC NULLS LAST, id DESC
+           LIMIT 500`,
+          [userId]
+        );
+      } else {
+        throw error;
+      }
+    }
 
     if (historyResult.rows.length === 0) {
       return createEmptyDNA();
@@ -128,7 +145,7 @@ function aggregateTrackFeatures(tracks) {
   const avgCount = Math.max(1, validTrackCount);
 
   // Compute percentages and ranges
-  const genresArray = Object.entries(genreMap)
+  let genresArray = Object.entries(genreMap)
     .sort((a, b) => b[1] - a[1])
     .slice(0, 10)
     .map(([genre, count]) => ({
@@ -148,6 +165,16 @@ function aggregateTrackFeatures(tracks) {
     .sort((a, b) => b[1] - a[1])
     .slice(0, 10)
     .map(([artist]) => artist);
+
+  // If providers don't expose genres yet, still render a meaningful genre grid.
+  if (!genresArray.length) {
+    genresArray = [
+      {
+        genre: topArtists.length ? 'Personal Mix' : 'Emerging Taste',
+        percentage: 100,
+      },
+    ];
+  }
 
   const topKeys = Object.entries(keyMap)
     .sort((a, b) => b[1] - a[1])
@@ -225,7 +252,9 @@ export async function getUserDNA(userId) {
     }
 
     const cached = result.rows[0];
-    const profile = JSON.parse(cached.profile_data);
+    const profile = typeof cached.profile_data === 'string'
+      ? JSON.parse(cached.profile_data)
+      : (cached.profile_data || {});
     profile.userId = userId;
     return profile;
   } catch (error) {
@@ -255,17 +284,35 @@ export async function findSonicTwins(userId, limit = 10) {
 
     // Use sampled features from user_tracks so this works without a global `tracks` table.
     // The row cap keeps RAM usage predictable on small servers.
-    const allTracksResult = await query(
-      `SELECT artist, features
-       FROM user_tracks
-       WHERE user_id <> $1
-         AND artist IS NOT NULL
-         AND features IS NOT NULL
-         AND completion_ratio > 0.2
-       ORDER BY updated_at DESC
-       LIMIT 3000`,
-      [userId]
-    );
+    let allTracksResult;
+    try {
+      allTracksResult = await query(
+        `SELECT artist, features
+         FROM user_tracks
+         WHERE user_id <> $1
+           AND artist IS NOT NULL
+           AND features IS NOT NULL
+           AND completion_ratio > 0.2
+         ORDER BY updated_at DESC
+         LIMIT 3000`,
+        [userId]
+      );
+    } catch (error) {
+      if (error?.code === '42703') {
+        // Older schema compatibility: fallback to artist-only rows.
+        allTracksResult = await query(
+          `SELECT artist, NULL::jsonb AS features
+           FROM user_tracks
+           WHERE user_id <> $1
+             AND artist IS NOT NULL
+           ORDER BY updated_at DESC NULLS LAST, id DESC
+           LIMIT 3000`,
+          [userId]
+        );
+      } else {
+        throw error;
+      }
+    }
 
     let artistScores = calculateArtistSimilarity(userDNA, allTracksResult.rows, userArtists);
 
