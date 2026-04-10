@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import { DNAHelix } from './DNAHelix';
 import { GenreBreakdown } from './GenreBreakdown';
 import { SonicTwins } from './SonicTwins';
@@ -6,6 +6,48 @@ import { UserDNACard } from './UserDNACard';
 import { buildApiUrl } from '../api/apiBase';
 import { getStoredAuthSession } from '../utils/authSession';
 import './musicDna.css';
+
+const DNA_CACHE_KEY = 'null-music-dna-cache';
+const DNA_CACHE_TTL_MS = 1000 * 60 * 60 * 24;
+
+function readCachedDNA() {
+  if (typeof window === 'undefined') return null;
+  try {
+    const raw = window.localStorage.getItem(DNA_CACHE_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    if (!parsed?.dna || !parsed?.savedAt) return null;
+    if (Date.now() - Number(parsed.savedAt) > DNA_CACHE_TTL_MS) return null;
+    return parsed.dna;
+  } catch {
+    return null;
+  }
+}
+
+function saveCachedDNA(nextDNA) {
+  if (typeof window === 'undefined' || !nextDNA) return;
+  try {
+    window.localStorage.setItem(DNA_CACHE_KEY, JSON.stringify({
+      savedAt: Date.now(),
+      dna: nextDNA,
+    }));
+  } catch {
+    // ignore storage failures
+  }
+}
+
+function getAuthHeaders() {
+  const token = getStoredAuthSession()?.token || '';
+  return token ? { Authorization: `Bearer ${token}` } : {};
+}
+
+async function parseJsonOrThrow(response, fallbackMessage) {
+  const contentType = String(response.headers.get('content-type') || '').toLowerCase();
+  if (!contentType.includes('application/json')) {
+    throw new Error(fallbackMessage);
+  }
+  return response.json();
+}
 
 /**
  * DNAProfile Component
@@ -16,27 +58,30 @@ export function DNAProfile() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [activeTab, setActiveTab] = useState('overview');
+  const isOffline = typeof navigator !== 'undefined' ? !navigator.onLine : false;
 
   useEffect(() => {
-    fetchDNA();
-  }, []);
+    void fetchDNA();
+  }, [fetchDNA]);
 
-  function getAuthHeaders() {
-    const token = getStoredAuthSession()?.token || '';
-    return token ? { Authorization: `Bearer ${token}` } : {};
-  }
-
-  async function parseJsonOrThrow(response, fallbackMessage) {
-    const contentType = String(response.headers.get('content-type') || '').toLowerCase();
-    if (!contentType.includes('application/json')) {
-      throw new Error(fallbackMessage);
-    }
-    return response.json();
-  }
-
-  async function fetchDNA() {
+  const fetchDNA = useCallback(async () => {
     try {
-      setLoading(true);
+      const offlineNow = typeof navigator !== 'undefined' ? !navigator.onLine : false;
+      const cachedDNA = readCachedDNA();
+      if (cachedDNA && offlineNow) {
+        setDNA(cachedDNA);
+        setError('You are offline. Showing your last saved Music DNA.');
+        setLoading(false);
+        return;
+      }
+
+      if (cachedDNA && !offlineNow) {
+        setDNA(cachedDNA);
+        setLoading(false);
+      } else {
+        setLoading(true);
+      }
+
       const response = await fetch(buildApiUrl('/user/dna'), {
         headers: {
           ...getAuthHeaders(),
@@ -44,21 +89,34 @@ export function DNAProfile() {
       });
 
       if (!response.ok) {
+        if (cachedDNA) {
+          setDNA(cachedDNA);
+          setError('Music DNA service is unavailable. Showing your cached profile.');
+          setLoading(false);
+          return;
+        }
         throw new Error(`Failed to fetch DNA: ${response.statusText}`);
       }
 
       const data = await parseJsonOrThrow(response, 'Music DNA service returned an invalid response. Check API base URL.');
       setDNA(data.dna);
+      saveCachedDNA(data.dna);
       setError(null);
     } catch (err) {
-      setError(err.message || 'Failed to load DNA profile');
+      const cachedDNA = readCachedDNA();
+      if (cachedDNA) {
+        setDNA(cachedDNA);
+        setError('Music DNA is offline. Showing your cached profile.');
+      } else {
+        setError(err.message || 'Failed to load DNA profile');
+      }
       console.error('Error fetching DNA:', err);
     } finally {
       setLoading(false);
     }
-  }
+  }, []);
 
-  async function handleRefreshDNA() {
+  const handleRefreshDNA = useCallback(async () => {
     try {
       setLoading(true);
       const response = await fetch(buildApiUrl('/user/dna/refresh'), {
@@ -75,14 +133,21 @@ export function DNAProfile() {
 
       const data = await parseJsonOrThrow(response, 'Music DNA refresh returned an invalid response. Check API base URL.');
       setDNA(data.dna);
+      saveCachedDNA(data.dna);
       setError(null);
     } catch (err) {
-      setError(err.message || 'Failed to refresh DNA profile');
+      const cachedDNA = readCachedDNA();
+      if (cachedDNA) {
+        setDNA(cachedDNA);
+        setError('Music DNA refresh failed, but your cached profile is still available.');
+      } else {
+        setError(err.message || 'Failed to refresh DNA profile');
+      }
       console.error('Error refreshing DNA:', err);
     } finally {
       setLoading(false);
     }
-  }
+  }, []);
 
   if (loading) {
     return (
@@ -95,10 +160,18 @@ export function DNAProfile() {
   if (error) {
     return (
       <div className="dna-profile error">
+        <div className="offline-banner">{isOffline ? 'Offline mode' : 'Music DNA notice'}</div>
         <div className="error-message">{error}</div>
-        <button onClick={fetchDNA} className="retry-btn">
+        <div className="dna-actions-row">
+          <button onClick={fetchDNA} className="retry-btn">
           Retry
-        </button>
+          </button>
+          {dna && (
+            <button onClick={handleRefreshDNA} className="retry-btn retry-btn--ghost" type="button">
+              Refresh
+            </button>
+          )}
+        </div>
       </div>
     );
   }
@@ -116,6 +189,10 @@ export function DNAProfile() {
       <div className="dna-header">
         <h1>🧬 Your Music DNA</h1>
         <p className="dna-subtitle">Your unique musical fingerprint based on {dna.trackCount || 0} tracks</p>
+        <div className="dna-badges">
+          <span className="track-status-pill track-status-pill--downloaded">Offline-first</span>
+          <span className="track-status-pill">Cache-aware</span>
+        </div>
         <button onClick={handleRefreshDNA} className="refresh-btn">
           ↻ Refresh
         </button>

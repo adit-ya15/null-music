@@ -6,9 +6,12 @@
   padding: 2rem;
   max-width: 1200px;
   margin: 0 auto;
-  background: linear-gradient(135deg, #0f0f1e 0%, #1a1a2e 100%);
+  background:
+    radial-gradient(circle at top, rgba(74, 222, 128, 0.14), transparent 30%),
+    radial-gradient(circle at right, rgba(56, 189, 248, 0.14), transparent 24%),
+    linear-gradient(180deg, #0a1020 0%, #11172a 100%);
   border-radius: 16px;
-  color: #e0e0e0;
+  color: #edf7ff;
 }
 
 .dna-profile.loading,
@@ -23,8 +26,9 @@
 
 .dna-profile .spinner {
   font-size: 1.2rem;
-  color: #4ecdc4;
+  color: #6ee7d8;
   animation: pulse 1.5s ease-in-out infinite;
+  text-align: center;
 }
 
 @keyframes pulse {
@@ -33,14 +37,46 @@
 }
 
 .dna-profile .error-message {
-  color: #ff6b6b;
+  color: #ff8f9b;
   margin-bottom: 1rem;
+  text-align: center;
+  line-height: 1.4;
+}
+
+.offline-banner {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  margin-bottom: 0.75rem;
+  padding: 0.35rem 0.7rem;
+  border-radius: 999px;
+  background: rgba(110, 231, 216, 0.12);
+  color: #8be9d7;
+  border: 1px solid rgba(110, 231, 216, 0.26);
+  font-size: 0.78rem;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.dna-badges {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 0.5rem;
+  margin-top: 0.8rem;
+}
+
+.dna-actions-row {
+  display: flex;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+  justify-content: center;
 }
 
 .dna-profile .retry-btn {
   padding: 0.5rem 1.5rem;
-  background: #4ecdc4;
-  color: #000;
+  background: linear-gradient(135deg, #56d8ff 0%, #6ee7d8 100%);
+  color: #07111f;
   border: none;
   border-radius: 8px;
   cursor: pointer;
@@ -49,7 +85,13 @@
 }
 
 .dna-profile .retry-btn:hover {
-  background: #45b7d1;
+  transform: translateY(-1px);
+}
+
+.retry-btn--ghost {
+  background: transparent !important;
+  color: #8be9d7 !important;
+  border: 1px solid rgba(139, 233, 215, 0.4) !important;
 }
 
 /* Header */
@@ -61,14 +103,14 @@
 .dna-header h1 {
   font-size: 2.5rem;
   margin: 0 0 0.5rem 0;
-  background: linear-gradient(135deg, #4ecdc4 0%, #45b7d1 100%);
+  background: linear-gradient(135deg, #8be9d7 0%, #7dd3fc 55%, #f9a8d4 100%);
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
   background-clip: text;
 }
 
 .dna-subtitle {
-  color: #999;
+  color: rgba(237, 247, 255, 0.72);
   font-size: 0.95rem;
   margin: 0;
 }
@@ -76,9 +118,9 @@
 .refresh-btn {
   margin-top: 1rem;
   padding: 0.6rem 1.5rem;
-  background: rgba(78, 205, 196, 0.2);
-  color: #4ecdc4;
-  border: 2px solid #4ecdc4;
+  background: rgba(110, 231, 216, 0.12);
+  color: #8be9d7;
+  border: 1px solid rgba(139, 233, 215, 0.45);
   border-radius: 8px;
   cursor: pointer;
   transition: all 0.3s ease;
@@ -86,35 +128,35 @@
 }
 
 .refresh-btn:hover {
-  background: rgba(78, 205, 196, 0.3);
+  background: rgba(110, 231, 216, 0.2);
   transform: scale(1.05);
 }
 
 /* DNA Card */
 .dna-card-container {
-  background: rgba(255, 255, 255, 0.05);
+  background: rgba(255, 255, 255, 0.04);
   padding: 1.5rem;
   border-radius: 12px;
-  border: 1px solid rgba(78, 205, 196, 0.3);
+  border: 1px solid rgba(139, 233, 215, 0.18);
   margin-bottom: 2rem;
 }
 
 .dna-card {
-  background: linear-gradient(135deg, rgba(78, 205, 196, 0.1), rgba(69, 183, 209, 0.1));
+  background: linear-gradient(135deg, rgba(10, 20, 40, 0.94), rgba(20, 30, 55, 0.94));
   border-radius: 12px;
   padding: 1.5rem;
-  border: 1px solid rgba(78, 205, 196, 0.5);
+  border: 1px solid rgba(139, 233, 215, 0.22);
 }
 
 .card-header {
-  border-bottom: 2px solid rgba(78, 205, 196, 0.3);
+  border-bottom: 1px solid rgba(139, 233, 215, 0.24);
   padding-bottom: 1rem;
   margin-bottom: 1rem;
 }
 
 .card-header h2 {
   margin: 0;
-  color: #4ecdc4;
+  color: #8be9d7;
 }
 
 .card-content {
@@ -132,25 +174,26 @@
 
 .stat-label {
   font-size: 0.85rem;
-  color: #999;
+  color: rgba(237, 247, 255, 0.65);
   text-transform: uppercase;
   letter-spacing: 1px;
 }
 
 .stat-value {
   font-size: 1.3rem;
-  color: #e0e0e0;
+  color: #edf7ff;
   font-weight: bold;
+  word-break: break-word;
 }
 
 .vibe-text {
   font-size: 1.1rem;
-  color: #ffa07a;
+  color: #f9a8d4;
 }
 
 .mini-bar {
   height: 6px;
-  background: rgba(255, 255, 255, 0.1);
+  background: rgba(255, 255, 255, 0.08);
   border-radius: 3px;
   overflow: hidden;
   margin: 0.3rem 0;
@@ -158,24 +201,24 @@
 
 .mini-fill {
   height: 100%;
-  background: linear-gradient(90deg, #4ecdc4, #45b7d1);
+  background: linear-gradient(90deg, #56d8ff, #6ee7d8);
 }
 
 .mini-fill.mood {
-  background: linear-gradient(90deg, #ffa07a, #ffb347);
+  background: linear-gradient(90deg, #f9a8d4, #fb7185);
 }
 
 .card-footer {
   text-align: center;
-  color: #666;
+  color: rgba(237, 247, 255, 0.5);
   font-size: 0.85rem;
-  border-top: 1px solid rgba(78, 205, 196, 0.2);
+  border-top: 1px solid rgba(139, 233, 215, 0.16);
   padding-top: 1rem;
 }
 
 .app-mention {
   font-weight: bold;
-  color: #4ecdc4;
+  color: #8be9d7;
   margin-top: 0.5rem;
 }
 
@@ -197,23 +240,21 @@
 }
 
 .share-btn {
-  background: #4ecdc4;
-  color: #000;
+  background: linear-gradient(135deg, #6ee7d8 0%, #56d8ff 100%);
+  color: #07111f;
 }
 
 .share-btn:hover {
-  background: #45b7d1;
   transform: translateY(-2px);
 }
 
 .download-btn {
-  background: rgba(255, 160, 122, 0.3);
-  color: #ffa07a;
-  border: 2px solid #ffa07a;
+  background: rgba(249, 168, 212, 0.12);
+  color: #f9a8d4;
+  border: 1px solid rgba(249, 168, 212, 0.4);
 }
 
 .download-btn:hover {
-  background: rgba(255, 160, 122, 0.5);
   transform: translateY(-2px);
 }
 
@@ -222,27 +263,28 @@
   display: flex;
   gap: 1rem;
   margin-bottom: 2rem;
-  border-bottom: 2px solid rgba(255, 255, 255, 0.1);
+  border-bottom: 1px solid rgba(139, 233, 215, 0.16);
 }
 
 .tab-btn {
   padding: 1rem 1.5rem;
   background: transparent;
-  color: #999;
+  color: rgba(237, 247, 255, 0.6);
   border: none;
   border-bottom: 3px solid transparent;
   cursor: pointer;
   font-weight: 600;
   transition: all 0.3s ease;
+  min-width: 0;
 }
 
 .tab-btn:hover {
-  color: #e0e0e0;
+  color: #edf7ff;
 }
 
 .tab-btn.active {
-  color: #4ecdc4;
-  border-bottom-color: #4ecdc4;
+  color: #8be9d7;
+  border-bottom-color: #8be9d7;
 }
 
 /* Overview Section */
@@ -271,10 +313,10 @@
   display: flex;
   justify-content: center;
   align-items: center;
-  background: rgba(255, 255, 255, 0.02);
+  background: rgba(255, 255, 255, 0.025);
   border-radius: 12px;
   padding: 1rem;
-  border: 1px solid rgba(78, 205, 196, 0.2);
+  border: 1px solid rgba(139, 233, 215, 0.12);
 }
 
 .dna-helix {
@@ -285,7 +327,7 @@
 .helix-svg {
   width: 100%;
   height: auto;
-  filter: drop-shadow(0 0 20px rgba(78, 205, 196, 0.3));
+  filter: drop-shadow(0 0 20px rgba(110, 231, 216, 0.22));
 }
 
 /* Stats */
@@ -303,59 +345,59 @@
 
 .stat label {
   font-size: 0.9rem;
-  color: #999;
+  color: rgba(237, 247, 255, 0.68);
   text-transform: uppercase;
   letter-spacing: 0.5px;
 }
 
 .stat-bar {
   height: 12px;
-  background: rgba(255, 255, 255, 0.1);
+  background: rgba(255, 255, 255, 0.08);
   border-radius: 6px;
   overflow: hidden;
 }
 
 .stat-fill {
   height: 100%;
-  background: linear-gradient(90deg, #4ecdc4, #45b7d1);
+  background: linear-gradient(90deg, #56d8ff, #6ee7d8);
   transition: width 0.5s ease;
 }
 
 .stat-fill.mood {
-  background: linear-gradient(90deg, #ffa07a, #ffb347);
+  background: linear-gradient(90deg, #f9a8d4, #fb7185);
 }
 
 .stat-fill.dance {
-  background: linear-gradient(90deg, #bb8fce, #d7bde2);
+  background: linear-gradient(90deg, #8b5cf6, #c084fc);
 }
 
 .stat-fill.acoustic {
-  background: linear-gradient(90deg, #f8b88b, #f5cba7);
+  background: linear-gradient(90deg, #fbbf24, #fdba74);
 }
 
 .stat span {
   font-size: 0.95rem;
-  color: #e0e0e0;
+  color: #edf7ff;
   font-weight: bold;
 }
 
 .stat-value {
   font-size: 1.2rem;
-  color: #4ecdc4;
+  color: #8be9d7;
   font-weight: bold;
 }
 
 /* Genre Breakdown */
 .genre-breakdown {
-  background: rgba(255, 255, 255, 0.02);
+  background: rgba(255, 255, 255, 0.025);
   padding: 1.5rem;
   border-radius: 12px;
-  border: 1px solid rgba(78, 205, 196, 0.2);
+  border: 1px solid rgba(139, 233, 215, 0.12);
 }
 
 .genre-breakdown h3 {
   margin: 0 0 1.5rem 0;
-  color: #e0e0e0;
+  color: #edf7ff;
 }
 
 .genre-chart {
@@ -377,7 +419,7 @@
 .genre-bar {
   flex: 1;
   height: 18px;
-  background: rgba(255, 255, 255, 0.1);
+  background: rgba(255, 255, 255, 0.08);
   border-radius: 9px;
   overflow: hidden;
   position: relative;
@@ -407,19 +449,19 @@
   min-width: 80px;
   text-align: right;
   font-size: 0.9rem;
-  color: #999;
+  color: rgba(237, 247, 255, 0.72);
 }
 
 /* Top Artists */
 .top-artists {
   margin-top: 2rem;
   padding-top: 2rem;
-  border-top: 1px solid rgba(78, 205, 196, 0.2);
+  border-top: 1px solid rgba(139, 233, 215, 0.12);
 }
 
 .top-artists h4 {
   margin: 0 0 1rem 0;
-  color: #e0e0e0;
+  color: #edf7ff;
 }
 
 .top-artists ul {
@@ -433,10 +475,10 @@
 
 .top-artists li {
   padding: 0.7rem;
-  background: rgba(78, 205, 196, 0.1);
+  background: rgba(110, 231, 216, 0.08);
   border-radius: 6px;
-  border-left: 3px solid #4ecdc4;
-  color: #e0e0e0;
+  border-left: 3px solid #8be9d7;
+  color: #edf7ff;
   font-size: 0.9rem;
 }
 
@@ -444,12 +486,12 @@
 .decade-preferences {
   margin-top: 2rem;
   padding-top: 2rem;
-  border-top: 1px solid rgba(78, 205, 196, 0.2);
+  border-top: 1px solid rgba(139, 233, 215, 0.12);
 }
 
 .decade-preferences h4 {
   margin: 0 0 1rem 0;
-  color: #e0e0e0;
+  color: #edf7ff;
 }
 
 .timeline {
@@ -467,25 +509,25 @@
 
 .decade label {
   font-weight: bold;
-  color: #999;
+  color: rgba(237, 247, 255, 0.7);
   text-align: center;
 }
 
 .decade-bar {
   height: 10px;
-  background: rgba(255, 255, 255, 0.1);
+  background: rgba(255, 255, 255, 0.08);
   border-radius: 5px;
   overflow: hidden;
 }
 
 .decade-fill {
   height: 100%;
-  background: linear-gradient(90deg, #4ecdc4, #45b7d1);
+  background: linear-gradient(90deg, #56d8ff, #6ee7d8);
 }
 
 .percentage {
   font-size: 0.85rem;
-  color: #999;
+  color: rgba(237, 247, 255, 0.7);
   text-align: center;
 }
 
@@ -493,12 +535,12 @@
 .artist-archetypes {
   margin-top: 2rem;
   padding-top: 2rem;
-  border-top: 1px solid rgba(78, 205, 196, 0.2);
+  border-top: 1px solid rgba(139, 233, 215, 0.12);
 }
 
 .artist-archetypes h4 {
   margin: 0 0 1rem 0;
-  color: #e0e0e0;
+  color: #edf7ff;
 }
 
 .archetypes-grid {
@@ -513,9 +555,9 @@
   align-items: center;
   gap: 0.5rem;
   padding: 1rem;
-  background: rgba(78, 205, 196, 0.1);
+  background: rgba(110, 231, 216, 0.08);
   border-radius: 8px;
-  border: 1px solid rgba(78, 205, 196, 0.3);
+  border: 1px solid rgba(139, 233, 215, 0.16);
   text-align: center;
 }
 
@@ -525,37 +567,52 @@
 
 .archetype-name {
   font-weight: bold;
-  color: #e0e0e0;
+  color: #edf7ff;
   text-transform: capitalize;
 }
 
 .archetype-percent {
   font-size: 0.85rem;
-  color: #4ecdc4;
+  color: #8be9d7;
 }
 
 /* Sonic Twins */
 .sonic-twins {
-  background: rgba(255, 255, 255, 0.02);
+  background: rgba(255, 255, 255, 0.025);
   padding: 1.5rem;
   border-radius: 12px;
-  border: 1px solid rgba(78, 205, 196, 0.2);
+  border: 1px solid rgba(139, 233, 215, 0.12);
 }
 
 .sonic-twins.loading,
 .sonic-twins.error,
 .sonic-twins.empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
   text-align: center;
-  padding: 2rem;
+  padding: 1.25rem;
+  min-height: 12rem;
+  gap: 0.75rem;
+}
+
+.sonic-twins.loading .spinner,
+.sonic-twins.error p,
+.sonic-twins.empty p {
+  max-width: 100%;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+  line-height: 1.4;
 }
 
 .sonic-twins h3 {
   margin: 0 0 0.5rem 0;
-  color: #e0e0e0;
+  color: #edf7ff;
 }
 
 .subtitle {
-  color: #999;
+  color: rgba(237, 247, 255, 0.72);
   font-size: 0.9rem;
   margin: 0 0 1.5rem 0;
 }
@@ -568,17 +625,18 @@
 }
 
 .twin-card {
-  background: rgba(78, 205, 196, 0.05);
-  border: 1px solid rgba(78, 205, 196, 0.3);
+  background: rgba(110, 231, 216, 0.06);
+  border: 1px solid rgba(139, 233, 215, 0.16);
   border-radius: 8px;
   padding: 1rem;
   position: relative;
   transition: all 0.3s ease;
+  min-width: 0;
 }
 
 .twin-card:hover {
-  background: rgba(78, 205, 196, 0.1);
-  border-color: rgba(78, 205, 196, 0.6);
+  background: rgba(110, 231, 216, 0.09);
+  border-color: rgba(139, 233, 215, 0.34);
   transform: translateY(-2px);
 }
 
@@ -586,8 +644,8 @@
   position: absolute;
   top: -12px;
   left: 1rem;
-  background: linear-gradient(135deg, #4ecdc4, #45b7d1);
-  color: #000;
+  background: linear-gradient(135deg, #6ee7d8, #56d8ff);
+  color: #07111f;
   width: 24px;
   height: 24px;
   border-radius: 50%;
@@ -604,7 +662,8 @@
 
 .twin-info h4 {
   margin: 0 0 0.5rem 0;
-  color: #e0e0e0;
+  color: #edf7ff;
+  word-break: break-word;
 }
 
 .match-score {
@@ -616,19 +675,20 @@
 
 .match-score .percentage {
   font-weight: bold;
-  color: #4ecdc4;
+  color: #8be9d7;
   font-size: 1.1rem;
 }
 
 .match-score .label {
-  color: #999;
+  color: rgba(237, 247, 255, 0.6);
   font-size: 0.85rem;
 }
 
 .reason {
-  color: #999;
+  color: rgba(237, 247, 255, 0.68);
   font-size: 0.9rem;
   margin: 0.5rem 0 0 0;
+  overflow-wrap: anywhere;
 }
 
 .twin-actions {
@@ -640,8 +700,8 @@
 .search-btn {
   flex: 1;
   padding: 0.5rem;
-  background: #4ecdc4;
-  color: #000;
+  background: linear-gradient(135deg, #6ee7d8, #56d8ff);
+  color: #07111f;
   border: none;
   border-radius: 6px;
   cursor: pointer;
@@ -651,25 +711,24 @@
 }
 
 .search-btn:hover {
-  background: #45b7d1;
   transform: scale(1.05);
 }
 
 .twins-info {
-  background: rgba(255, 255, 255, 0.05);
+  background: rgba(255, 255, 255, 0.045);
   padding: 1rem;
   border-radius: 8px;
-  border-left: 3px solid #4ecdc4;
+  border-left: 3px solid #8be9d7;
 }
 
 .twins-info h4 {
   margin: 0 0 0.5rem 0;
-  color: #e0e0e0;
+  color: #edf7ff;
 }
 
 .twins-info p {
   margin: 0;
-  color: #999;
+  color: rgba(237, 247, 255, 0.68);
   font-size: 0.9rem;
   line-height: 1.4;
 }
@@ -679,8 +738,8 @@
   text-align: center;
   margin-top: 2rem;
   padding-top: 1rem;
-  border-top: 1px solid rgba(78, 205, 196, 0.2);
-  color: #666;
+  border-top: 1px solid rgba(139, 233, 215, 0.12);
+  color: rgba(237, 247, 255, 0.5);
   font-size: 0.85rem;
 }
 
@@ -708,6 +767,7 @@
 
   .dna-tabs {
     flex-direction: column;
+    gap: 0.5rem;
   }
 
   .tab-btn {
@@ -718,6 +778,22 @@
   }
 
   .tab-btn.active {
-    border-left-color: #4ecdc4;
+    border-left-color: #8be9d7;
+  }
+
+  .card-actions,
+  .dna-actions-row {
+    flex-direction: column;
+  }
+
+  .share-btn,
+  .download-btn,
+  .dna-profile .retry-btn {
+    width: 100%;
+  }
+
+  .dna-card-container,
+  .sonic-twins {
+    padding: 1rem;
   }
 }

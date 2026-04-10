@@ -1,6 +1,9 @@
-import React, { useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import { buildApiUrl } from '../api/apiBase';
 import { getStoredAuthSession } from '../utils/authSession';
+
+const TWINS_CACHE_KEY = 'null-music-dna-twins-cache';
+const TWINS_CACHE_TTL_MS = 1000 * 60 * 60 * 6;
 
 /**
  * SonicTwins Component
@@ -10,10 +13,11 @@ export function SonicTwins() {
   const [twins, setTwins] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+  const isOffline = typeof navigator !== 'undefined' ? !navigator.onLine : false;
 
   useEffect(() => {
     fetchSonicTwins();
-  }, []);
+  }, [fetchSonicTwins]);
 
   function getAuthHeaders() {
     const token = getStoredAuthSession()?.token || '';
@@ -28,9 +32,49 @@ export function SonicTwins() {
     return response.json();
   }
 
-  async function fetchSonicTwins() {
+  function readCachedTwins() {
+    if (typeof window === 'undefined') return null;
     try {
-      setLoading(true);
+      const raw = window.localStorage.getItem(TWINS_CACHE_KEY);
+      if (!raw) return null;
+      const parsed = JSON.parse(raw);
+      if (!Array.isArray(parsed?.twins) || !parsed?.savedAt) return null;
+      if (Date.now() - Number(parsed.savedAt) > TWINS_CACHE_TTL_MS) return null;
+      return parsed.twins;
+    } catch {
+      return null;
+    }
+  }
+
+  function saveCachedTwins(nextTwins) {
+    if (typeof window === 'undefined' || !Array.isArray(nextTwins)) return;
+    try {
+      window.localStorage.setItem(TWINS_CACHE_KEY, JSON.stringify({
+        savedAt: Date.now(),
+        twins: nextTwins,
+      }));
+    } catch {
+      // ignore storage failures
+    }
+  }
+
+  const fetchSonicTwins = useCallback(async () => {
+    try {
+      const cachedTwins = readCachedTwins();
+      if (cachedTwins && isOffline) {
+        setTwins(cachedTwins);
+        setError('You are offline. Showing your last saved sonic twins.');
+        setLoading(false);
+        return;
+      }
+
+      if (cachedTwins && !isOffline) {
+        setTwins(cachedTwins);
+        setLoading(false);
+      } else {
+        setLoading(true);
+      }
+
       const response = await fetch(buildApiUrl('/user/sonic-twins?limit=20'), {
         headers: {
           ...getAuthHeaders(),
@@ -38,19 +82,32 @@ export function SonicTwins() {
       });
 
       if (!response.ok) {
+        if (cachedTwins) {
+          setTwins(cachedTwins);
+          setError('Music DNA service is unavailable. Showing cached sonic twins.');
+          setLoading(false);
+          return;
+        }
         throw new Error(`Failed to fetch sonic twins: ${response.statusText}`);
       }
 
       const data = await parseJsonOrThrow(response, 'Sonic Twins service returned an invalid response. Check API base URL.');
       setTwins(data.sonicTwins || []);
+      saveCachedTwins(data.sonicTwins || []);
       setError(null);
     } catch (err) {
-      setError(err.message || 'Failed to load sonic twins');
+      const cachedTwins = readCachedTwins();
+      if (cachedTwins) {
+        setTwins(cachedTwins);
+        setError('Music DNA is offline. Showing your cached sonic twins.');
+      } else {
+        setError(err.message || 'Failed to load sonic twins');
+      }
       console.error('Error fetching sonic twins:', err);
     } finally {
       setLoading(false);
     }
-  }
+  }, [isOffline]);
 
   if (loading) {
     return (
@@ -63,8 +120,9 @@ export function SonicTwins() {
   if (error) {
     return (
       <div className="sonic-twins error">
+        <div className="offline-banner">{isOffline ? 'Offline mode' : 'Music DNA notice'}</div>
         <p>{error}</p>
-        <button onClick={fetchSonicTwins}>Retry</button>
+        <button onClick={fetchSonicTwins} className="retry-btn" type="button">Retry</button>
       </div>
     );
   }
