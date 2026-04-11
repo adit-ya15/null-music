@@ -117,15 +117,6 @@ export function createMusicSources({
       return nextResolved;
     }
 
-    if (race?.streamUrl) {
-      const nextResolved = {
-        ...race,
-        streamSource: race.streamSource || 'monochrome',
-      };
-      setCachedStream(videoId, nextResolved);
-      return nextResolved;
-    }
-
     return null;
   }
 
@@ -165,6 +156,18 @@ export function createMusicSources({
     return nextResolved;
   }
 
+  async function resolveYoutubeSaavnBackup(videoId, track) {
+    const saavnResolved = await resolveSaavnFallbackTrack(track);
+    if (!saavnResolved?.streamUrl) return null;
+
+    const nextResolved = {
+      ...saavnResolved,
+      streamSource: saavnResolved.streamSource || 'saavn',
+    };
+    setCachedStream(videoId, nextResolved);
+    return nextResolved;
+  }
+
   const youtubeSource = {
     id: 'youtube',
     async search(query, limit = 20) {
@@ -182,6 +185,11 @@ export function createMusicSources({
       const resolvedPrimary = await resolveYoutubePrimary(videoId, track);
       if (resolvedPrimary?.streamUrl) {
         return resolvedPrimary;
+      }
+
+      const resolvedSaavn = await resolveYoutubeSaavnBackup(videoId, track);
+      if (resolvedSaavn?.streamUrl) {
+        return resolvedSaavn;
       }
 
       const resolvedFallback = await resolveYoutubeFallback(videoId, track);

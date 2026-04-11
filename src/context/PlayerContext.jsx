@@ -21,6 +21,8 @@ import { recordTrackPlaySafe } from "../api/trackPlay";
 import { getOrCreateUserId } from "../utils/userId";
 import { createMusicSources } from "../sources/musicSources";
 import { resolveMonochromeStream } from "../sources/monochromeSource";
+import { pickBestTrackMatch } from "../../shared/trackMatch.js";
+import { diversifyRankedRecommendations } from "../../shared/recommendation.js";
 
 import {
   buildPlaybackSession,
@@ -222,9 +224,34 @@ function scoreRecommendation(seedTrack, candidate) {
 
   const sameArtist = normalizeRecoText(seedTrack?.artist || '')
     && normalizeRecoText(seedTrack?.artist || '') === normalizeRecoText(candidate?.artist || '');
-  const sameArtistPenalty = sameArtist ? -0.22 : 0;
+  const sameArtistPenalty = sameArtist ? -0.38 : 0;
 
   return (overlapScore * 0.86) + (artistOverlap * 0.14) + scriptBonus + scriptPenalty + sameArtistPenalty;
+}
+
+async function resolveSaavnPlayableTrack(seedTrack) {
+  if (!seedTrack) return null;
+
+  const query = `${String(seedTrack?.title || '').trim()} ${String(seedTrack?.artist || '').trim()} ${String(seedTrack?.album || '').trim()}`.trim();
+  if (!query) return null;
+
+  try {
+    const result = await saavnApi.searchSongsSafe(query, 12);
+    if (!result?.ok || !Array.isArray(result.data) || !result.data.length) return null;
+
+    const candidates = result.data
+      .map((song) => saavnApi.formatTrack(song))
+      .filter((song) => song?.streamUrl && Number(song?.duration || 0) > 35);
+
+    const match = pickBestTrackMatch(candidates, seedTrack, {
+      getTitle: (item) => item?.title,
+      getArtist: (item) => item?.artist,
+    });
+
+    return match?.candidate || null;
+  } catch {
+    return null;
+  }
 }
 
 function rankRecommendationCandidates(seedTrack, candidates, options = {}) {
@@ -259,6 +286,20 @@ function rankRecommendationCandidates(seedTrack, candidates, options = {}) {
   }
 
   return diversified.length >= minimumCount ? diversified : picked.map((item) => item.track);
+}
+
+function rankAndDiversifyRecommendations(seedTrack, candidates, options = {}) {
+  const ranked = rankRecommendationCandidates(seedTrack, candidates, options)
+    .map((track) => ({
+      track,
+      score: scoreRecommendation(seedTrack, track) + adjustRecommendationWithTaste(track, options.tasteProfile || null),
+    }))
+    .sort((a, b) => b.score - a.score);
+
+  return diversifyRankedRecommendations(ranked, {
+    artistCooldown: options.artistCooldown ?? 1,
+    recentTracks: options.recentTracks || [],
+  }).map((item) => item.track);
 }
 
 function buildSimilarityQueries(seedTrack) {
@@ -321,6 +362,20 @@ function adjustRecommendationWithTaste(track, profile) {
   const penalty = Math.min(0.32, skippedArtist * 0.04) + Math.min(0.3, skippedTrack * 0.06);
 
   return affinityBoost - penalty;
+}
+
+function getRecentRecommendationTracks(queue = [], currentTrack = null, limit = 6) {
+  const recent = [];
+  if (currentTrack) recent.push(currentTrack);
+
+  for (let index = queue.length - 1; index >= 0 && recent.length < limit; index -= 1) {
+    const track = queue[index];
+    if (!track?.id) continue;
+    if (currentTrack?.id && track.id === currentTrack.id) continue;
+    recent.push(track);
+  }
+
+  return recent;
 }
 
 function isLikelyPreviewStream(track, streamUrl = '') {
@@ -754,6 +809,27 @@ export const PlayerProvider = ({ children }) => {
                 return resolved;
               }
             }
+
+            const saavnResolved = await resolveSaavnPlayableTrack(track);
+            if (saavnResolved?.streamUrl) {
+              const resolved = mergeResolvedTrack(track, {
+                streamUrl: saavnResolved.streamUrl,
+                streamSource: saavnResolved.streamSource || 'saavn',
+                streamResolvedAt: Date.now(),
+              });
+
+              if (record) {
+                recordReliabilityEvent('fallback', {
+                  trackId: track.id,
+                  title: track.title,
+                  streamSource: resolved.streamSource || 'saavn',
+                  message: 'Replaced preview-only source with full-length Saavn stream.',
+                });
+              }
+
+              upgradedToFullTrack = true;
+              return resolved;
+            }
           }
         } catch {
           // Ignore preview replacement failures; continue with existing source fallback.
@@ -1106,17 +1182,13 @@ export const PlayerProvider = ({ children }) => {
         return true;
       });
 
-      return rankRecommendationCandidates(seedTrack, filtered, {
+      return rankAndDiversifyRecommendations(seedTrack, filtered, {
         minScore: 0.3,
         minimumCount: 6,
         maxCount: 20,
-      })
-        .map((track) => ({
-          track,
-          score: scoreRecommendation(seedTrack, track) + adjustRecommendationWithTaste(track, tasteProfileRef.current),
-        }))
-        .sort((a, b) => b.score - a.score)
-        .map((item) => item.track);
+        recentTracks: getRecentRecommendationTracks(queueRef.current, currentTrackRef.current, 6),
+        tasteProfile: tasteProfileRef.current,
+      });
     } catch (error) {
       console.error('Recommendation fetch failed:', error);
       return [];
@@ -1340,17 +1412,13 @@ export const PlayerProvider = ({ children }) => {
         return true;
       });
 
-      return rankRecommendationCandidates(seedTrack, filtered, {
+      return rankAndDiversifyRecommendations(seedTrack, filtered, {
         minScore: 0.3,
         minimumCount: 5,
         maxCount: 15,
-      })
-        .map((track) => ({
-          track,
-          score: scoreRecommendation(seedTrack, track) + adjustRecommendationWithTaste(track, tasteProfileRef.current),
-        }))
-        .sort((a, b) => b.score - a.score)
-        .map((item) => item.track);
+        recentTracks: getRecentRecommendationTracks(queueRef.current, currentTrackRef.current, 6),
+        tasteProfile: tasteProfileRef.current,
+      });
     } catch {
       return [];
     }
