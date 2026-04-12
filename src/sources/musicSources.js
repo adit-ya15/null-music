@@ -1,7 +1,7 @@
 import { resolveYtdlpEndpointStream } from './ytdlpSource.js';
 import { resolvePipedStream } from './pipedSource.js';
 import { saavnApi } from '../api/saavn.js';
-import { pickBestTrackMatch } from '../../shared/trackMatch.js';
+import { pickBestTrackMatch, scoreTrackCandidate } from '../../shared/trackMatch.js';
 
 const STREAM_CACHE_TTL_MS = 10 * 60 * 1000;
 
@@ -18,7 +18,8 @@ function isPreviewLength(track, streamUrl = '') {
   return url.includes('preview') || url.includes('sample') || url.includes('30sec');
 }
 
-async function resolveSaavnFallbackTrack(track) {
+async function resolveSaavnFallbackTrack(track, options = {}) {
+  const { allowConservative = false } = options;
   if (!saavnApi) return null;
 
   const query = `${String(track?.title || '').trim()} ${String(track?.artist || '').trim()} ${String(track?.album || '').trim()}`.trim();
@@ -36,7 +37,45 @@ async function resolveSaavnFallbackTrack(track) {
     getArtist: (item) => item?.artist,
   });
 
-  return confident?.candidate || null;
+  if (confident?.candidate) return confident.candidate;
+  if (!allowConservative) return null;
+
+  // If strict confidence fails, allow a conservative backup pick.
+  const scored = candidates
+    .map((candidate) => ({
+      candidate,
+      score: scoreTrackCandidate(track, candidate, {
+        getTitle: (item) => item?.title,
+        getArtist: (item) => item?.artist,
+      }),
+    }))
+    .sort((left, right) => right.score.combinedScore - left.score.combinedScore);
+
+  const backup = scored[0];
+  if (!backup) return null;
+  if (backup.score.titleScore < 0.58) return null;
+  if (backup.score.combinedScore < 0.66) return null;
+  if (backup.score.artistScore < 0.2) return null;
+  return backup.candidate;
+}
+
+function withTimeoutValue(promise, timeoutMs, fallbackValue = null) {
+  const ms = Math.max(300, Number(timeoutMs || 0));
+  return Promise.race([
+    promise,
+    new Promise((resolve) => setTimeout(() => resolve(fallbackValue), ms)),
+  ]);
+}
+
+async function resolveFirstStream(promises = [], timeoutMs = 7000) {
+  const wrapped = promises.map((promise) =>
+    Promise.resolve(promise).then((result) => {
+      if (result?.streamUrl) return result;
+      throw new Error('empty');
+    })
+  );
+
+  return withTimeoutValue(Promise.any(wrapped), timeoutMs, null).catch(() => null);
 }
 
 export function createMusicSources({
@@ -85,7 +124,7 @@ export function createMusicSources({
       title: track?.title,
       artist: track?.artist,
     });
-    const timeoutMs = Math.max(900, Number(track?.monochromeTimeoutMs || 1400));
+    const timeoutMs = Math.max(700, Number(track?.monochromeTimeoutMs || 1100));
     const race = await Promise.race([
       monochromePromise,
       new Promise((resolve) => setTimeout(() => resolve(null), timeoutMs)),
@@ -97,7 +136,7 @@ export function createMusicSources({
       race?.resolutionMode === 'search-fallback';
 
     if (mustPreferSaavn) {
-      const saavnResolved = await resolveSaavnFallbackTrack(track);
+      const saavnResolved = await resolveSaavnFallbackTrack(track, { allowConservative: false });
       if (saavnResolved?.streamUrl) {
         const nextResolved = {
           ...saavnResolved,
@@ -126,6 +165,7 @@ export function createMusicSources({
     const resolved = await pipedResolver(videoId, {
       title: track?.title,
       artist: track?.artist,
+      timeoutMs: 2200,
     });
 
     if (!resolved?.streamUrl) return null;
@@ -144,6 +184,7 @@ export function createMusicSources({
     const resolved = await ytdlpResolver(videoId, {
       title: track?.title,
       artist: track?.artist,
+      timeoutMs: 2400,
     });
 
     if (!resolved?.streamUrl) return null;
@@ -157,7 +198,7 @@ export function createMusicSources({
   }
 
   async function resolveYoutubeSaavnBackup(videoId, track) {
-    const saavnResolved = await resolveSaavnFallbackTrack(track);
+    const saavnResolved = await resolveSaavnFallbackTrack(track, { allowConservative: false });
     if (!saavnResolved?.streamUrl) return null;
 
     const nextResolved = {
@@ -187,19 +228,15 @@ export function createMusicSources({
         return resolvedPrimary;
       }
 
-      const resolvedSaavn = await resolveYoutubeSaavnBackup(videoId, track);
-      if (resolvedSaavn?.streamUrl) {
-        return resolvedSaavn;
-      }
+      const saavnTask = resolveYoutubeSaavnBackup(videoId, track);
+      const resolvedAny = await resolveFirstStream([
+        saavnTask,
+        resolveYoutubeFallback(videoId, track),
+        resolveYoutubeBackup(videoId, track),
+      ], 4800);
 
-      const resolvedFallback = await resolveYoutubeFallback(videoId, track);
-      if (resolvedFallback?.streamUrl) {
-        return resolvedFallback;
-      }
-
-      const resolvedBackup = await resolveYoutubeBackup(videoId, track);
-      if (resolvedBackup?.streamUrl) {
-        return resolvedBackup;
+      if (resolvedAny?.streamUrl) {
+        return resolvedAny;
       }
 
       return null;

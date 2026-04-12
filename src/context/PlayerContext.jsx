@@ -21,7 +21,7 @@ import { recordTrackPlaySafe } from "../api/trackPlay";
 import { getOrCreateUserId } from "../utils/userId";
 import { createMusicSources } from "../sources/musicSources";
 import { resolveMonochromeStream } from "../sources/monochromeSource";
-import { pickBestTrackMatch } from "../../shared/trackMatch.js";
+import { pickBestTrackMatch, scoreTrackCandidate } from "../../shared/trackMatch.js";
 import { diversifyRankedRecommendations } from "../../shared/recommendation.js";
 
 import {
@@ -248,7 +248,23 @@ async function resolveSaavnPlayableTrack(seedTrack) {
       getArtist: (item) => item?.artist,
     });
 
-    return match?.candidate || null;
+    if (match?.candidate) return match.candidate;
+
+    const scored = candidates
+      .map((candidate) => ({
+        candidate,
+        score: scoreTrackCandidate(seedTrack, candidate, {
+          getTitle: (item) => item?.title,
+          getArtist: (item) => item?.artist,
+        }),
+      }))
+      .sort((left, right) => right.score.combinedScore - left.score.combinedScore);
+
+    const backup = scored[0];
+    if (!backup) return null;
+    if (backup.score.titleScore < 0.58) return null;
+    if (backup.score.combinedScore < 0.62) return null;
+    return backup.candidate;
   } catch {
     return null;
   }
@@ -285,7 +301,29 @@ function rankRecommendationCandidates(seedTrack, candidates, options = {}) {
     if (diversified.length >= maxCount) break;
   }
 
-  return diversified.length >= minimumCount ? diversified : picked.map((item) => item.track);
+  if (diversified.length > 0) {
+    return diversified;
+  }
+  return picked.map((item) => item.track);
+}
+
+function capArtistRepetition(candidates = [], options = {}) {
+  const maxPerArtist = Math.max(1, Number(options.maxPerArtist || 2));
+  const maxSeedArtist = Math.max(0, Number(options.maxSeedArtist || 1));
+  const seedArtistKey = normalizeRecoText(options.seedTrack?.artist || '');
+  const artistCounts = new Map();
+  const limited = [];
+
+  for (const track of Array.isArray(candidates) ? candidates : []) {
+    const artistKey = normalizeRecoText(track?.artist || 'unknown');
+    const used = artistCounts.get(artistKey) || 0;
+    const limit = artistKey && artistKey === seedArtistKey ? maxSeedArtist : maxPerArtist;
+    if (used >= limit) continue;
+    artistCounts.set(artistKey, used + 1);
+    limited.push(track);
+  }
+
+  return limited;
 }
 
 function rankAndDiversifyRecommendations(seedTrack, candidates, options = {}) {
@@ -1182,11 +1220,19 @@ export const PlayerProvider = ({ children }) => {
         return true;
       });
 
-      return rankAndDiversifyRecommendations(seedTrack, filtered, {
+      const artistLimited = capArtistRepetition(filtered, {
+        seedTrack,
+        maxPerArtist: 2,
+        maxSeedArtist: 1,
+      });
+      const candidatePool = artistLimited.length >= 8 ? artistLimited : filtered;
+
+      return rankAndDiversifyRecommendations(seedTrack, candidatePool, {
         minScore: 0.3,
         minimumCount: 6,
         maxCount: 20,
-        recentTracks: getRecentRecommendationTracks(queueRef.current, currentTrackRef.current, 6),
+        artistCooldown: 2,
+        recentTracks: getRecentRecommendationTracks(queueRef.current, currentTrackRef.current, 8),
         tasteProfile: tasteProfileRef.current,
       });
     } catch (error) {
@@ -1412,11 +1458,19 @@ export const PlayerProvider = ({ children }) => {
         return true;
       });
 
-      return rankAndDiversifyRecommendations(seedTrack, filtered, {
+      const artistLimited = capArtistRepetition(filtered, {
+        seedTrack,
+        maxPerArtist: 2,
+        maxSeedArtist: 1,
+      });
+      const candidatePool = artistLimited.length >= 8 ? artistLimited : filtered;
+
+      return rankAndDiversifyRecommendations(seedTrack, candidatePool, {
         minScore: 0.3,
         minimumCount: 5,
         maxCount: 15,
-        recentTracks: getRecentRecommendationTracks(queueRef.current, currentTrackRef.current, 6),
+        artistCooldown: 2,
+        recentTracks: getRecentRecommendationTracks(queueRef.current, currentTrackRef.current, 8),
         tasteProfile: tasteProfileRef.current,
       });
     } catch {

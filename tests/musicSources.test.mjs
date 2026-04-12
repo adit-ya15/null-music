@@ -117,6 +117,53 @@ test('youtube source prefers saavn when monochrome uses risky search fallback mo
   }
 });
 
+test('youtube source rejects weak Saavn artist matches and falls back to piped', async () => {
+  const restoreSaavn = mockSaavn({
+    data: [
+      {
+        id: 'saavn-unholy-other',
+        title: 'Unholy',
+        artist: 'Some Other Artist',
+        album: 'Random Album',
+        streamUrl: 'https://saavn.example/wrong-track.mp3',
+        duration: 201,
+        source: 'saavn',
+      },
+    ],
+  });
+
+  try {
+    const youtubeApi = {
+      async searchSongsSafe() {
+        return { ok: true, data: [] };
+      },
+    };
+
+    const sources = createMusicSources({
+      youtubeApi,
+      monochromeResolver: async () => null,
+      pipedResolver: async () => ({
+        streamUrl: 'https://piped.example/unholy-correct.webm',
+        streamSource: 'piped',
+      }),
+      ytdlpResolver: async () => null,
+    });
+
+    const resolved = await sources.youtube.getStreamUrl({
+      id: 'yt-testunholy123',
+      title: 'Unholy',
+      artist: 'Sam Smith, Kim Petras',
+      album: 'Unholy',
+    });
+
+    assert.ok(resolved);
+    assert.equal(resolved.streamUrl, 'https://piped.example/unholy-correct.webm');
+    assert.equal(resolved.streamSource, 'piped');
+  } finally {
+    restoreSaavn();
+  }
+});
+
 test('monochrome source resolves youtube ids', async () => {
   const youtubeApi = {
     async searchSongsSafe() {

@@ -1,7 +1,8 @@
 import { logInfo } from '../utils/logger.js';
 
-const DEFAULT_TIMEOUT_MS = 6500;
-const MAX_CANDIDATES = 40;
+const DEFAULT_TIMEOUT_MS = 4200;
+const MAX_CANDIDATES = 20;
+const ENABLE_SEARCH_FALLBACK = String(import.meta?.env?.VITE_MONOCHROME_SEARCH_FALLBACK || '').toLowerCase() === 'true';
 const DEFAULT_MONOCHROME_ENDPOINTS = [
   'https://monochrome-api.samidy.com',
   'https://api.monochrome.tf',
@@ -314,7 +315,7 @@ async function probeEndpoint(endpointUrl, videoId, timeoutMs, context = {}) {
           }
         }
 
-        if (!streamUrl) {
+        if (!streamUrl && ENABLE_SEARCH_FALLBACK) {
           try {
             const fallbackResult = await resolveFromHifiApiBase(base, context, timeoutMs);
             streamUrl = fallbackResult?.streamUrl || '';
@@ -352,7 +353,7 @@ async function probeEndpoint(endpointUrl, videoId, timeoutMs, context = {}) {
         }
       }
 
-      if (!streamUrl) {
+      if (!streamUrl && ENABLE_SEARCH_FALLBACK) {
         const fallbackResult = await resolveFromHifiApiBase(endpointUrl, context, timeoutMs);
         streamUrl = fallbackResult?.streamUrl || '';
         if (streamUrl) {
