@@ -618,8 +618,18 @@ function App() {
   const sourceHealth = useMemo(() => {
     const rows = {};
     const events = Array.isArray(reliabilityDebug?.events) ? reliabilityDebug.events : [];
+    const normalizeSource = (value) => {
+      const lower = String(value || '').toLowerCase();
+      if (lower.includes('monochrome')) return 'monochrome';
+      if (lower.includes('saavn')) return 'saavn';
+      return null;
+    };
+
     events.forEach((event) => {
-      const source = event.streamSource || event.reason || 'unknown';
+      if (event.kind !== 'resolved' && event.kind !== 'fallback' && event.kind !== 'error') return;
+      const source = normalizeSource(event.streamSource);
+      if (!source) return;
+
       if (!rows[source]) {
         rows[source] = { source, resolved: 0, fallback: 0, errors: 0 };
       }

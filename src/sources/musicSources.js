@@ -1,5 +1,3 @@
-import { resolveYtdlpEndpointStream } from './ytdlpSource.js';
-import { resolvePipedStream } from './pipedSource.js';
 import { saavnApi } from '../api/saavn.js';
 import { pickBestTrackMatch, scoreTrackCandidate } from '../../shared/trackMatch.js';
 
@@ -18,19 +16,52 @@ function isPreviewLength(track, streamUrl = '') {
   return url.includes('preview') || url.includes('sample') || url.includes('30sec');
 }
 
+function buildSaavnQueries(track) {
+  const title = String(track?.title || '').trim();
+  const artist = String(track?.artist || '').trim();
+  const album = String(track?.album || '').trim();
+
+  const queries = [
+    `${title} ${artist} ${album}`.trim(),
+    `${title} ${artist}`.trim(),
+    title,
+  ].filter(Boolean);
+
+  return [...new Set(queries)];
+}
+
 async function resolveSaavnFallbackTrack(track, options = {}) {
   const { allowConservative = false } = options;
   if (!saavnApi) return null;
 
-  const query = `${String(track?.title || '').trim()} ${String(track?.artist || '').trim()} ${String(track?.album || '').trim()}`.trim();
-  if (!query) return null;
+  const queries = buildSaavnQueries(track);
+  if (!queries.length) return null;
 
-  const result = await saavnApi.searchSongsSafe(query, 12);
-  if (!result?.data?.length) return null;
+  const pooledCandidates = [];
+  for (const query of queries) {
+    const result = await saavnApi.searchSongsSafe(query, 12);
+    if (!result?.data?.length) continue;
+    const formatted = result.data
+      .map((song) => saavnApi.formatTrack(song))
+      .filter((song) => {
+        if (!song?.streamUrl) return false;
+        if (isPreviewLength(song, song.streamUrl)) return false;
+        const duration = Number(song?.duration || 0);
+        // Accept unknown durations because Saavn metadata can be incomplete.
+        return duration === 0 || duration > 35;
+      });
+    pooledCandidates.push(...formatted);
+    if (pooledCandidates.length >= 20) break;
+  }
 
-  const candidates = result.data
-    .map((song) => saavnApi.formatTrack(song))
-    .filter((song) => song?.streamUrl && Number(song?.duration || 0) > 35);
+  const seen = new Set();
+  const candidates = pooledCandidates.filter((song) => {
+    const key = `${song?.id || ''}|${song?.title || ''}|${song?.artist || ''}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+  if (!candidates.length) return null;
 
   const confident = pickBestTrackMatch(candidates, track, {
     getTitle: (item) => item?.title,
@@ -53,9 +84,9 @@ async function resolveSaavnFallbackTrack(track, options = {}) {
 
   const backup = scored[0];
   if (!backup) return null;
-  if (backup.score.titleScore < 0.58) return null;
-  if (backup.score.combinedScore < 0.66) return null;
-  if (backup.score.artistScore < 0.2) return null;
+  if (backup.score.titleScore < 0.54) return null;
+  if (backup.score.combinedScore < 0.6) return null;
+  if (backup.score.artistScore < 0.12) return null;
   return backup.candidate;
 }
 
@@ -67,23 +98,10 @@ function withTimeoutValue(promise, timeoutMs, fallbackValue = null) {
   ]);
 }
 
-async function resolveFirstStream(promises = [], timeoutMs = 7000) {
-  const wrapped = promises.map((promise) =>
-    Promise.resolve(promise).then((result) => {
-      if (result?.streamUrl) return result;
-      throw new Error('empty');
-    })
-  );
-
-  return withTimeoutValue(Promise.any(wrapped), timeoutMs, null).catch(() => null);
-}
-
 export function createMusicSources({
   youtubeApi,
   jamendoApi,
   soundcloudApi,
-  pipedResolver = resolvePipedStream,
-  ytdlpResolver = resolveYtdlpEndpointStream,
   monochromeResolver,
 }) {
   const streamCache = new Map();
@@ -124,33 +142,34 @@ export function createMusicSources({
       title: track?.title,
       artist: track?.artist,
     });
-    const timeoutMs = Math.max(700, Number(track?.monochromeTimeoutMs || 1100));
+    const timeoutMs = Math.max(5000, Number(track?.monochromeTimeoutMs || 6500));
     const race = await Promise.race([
       monochromePromise,
       new Promise((resolve) => setTimeout(() => resolve(null), timeoutMs)),
     ]);
 
-    const mustPreferSaavn =
-      !race?.streamUrl ||
-      isPreviewLength(track, race?.streamUrl) ||
-      race?.resolutionMode === 'search-fallback';
-
-    if (mustPreferSaavn) {
-      const saavnResolved = await resolveSaavnFallbackTrack(track, { allowConservative: false });
-      if (saavnResolved?.streamUrl) {
-        const nextResolved = {
-          ...saavnResolved,
-          streamSource: saavnResolved.streamSource || 'saavn',
-        };
-        setCachedStream(videoId, nextResolved);
-        return nextResolved;
-      }
-    }
-
-    if (race?.streamUrl && !isPreviewLength(track, race.streamUrl)) {
+    // Return Monochrome if it succeeded with a full song
+    if (race?.streamUrl && !isPreviewLength(track, race.streamUrl) && race?.resolutionMode !== 'search-fallback') {
       const nextResolved = {
         ...race,
         streamSource: race.streamSource || 'monochrome',
+        monochromeAttempted: true,
+      };
+      setCachedStream(videoId, nextResolved);
+      return nextResolved;
+    }
+
+    // Fall back to Saavn if Monochrome failed or returned preview
+    const saavnResolved = await resolveSaavnFallbackTrack(track, { allowConservative: false });
+    if (saavnResolved?.streamUrl) {
+      const nextResolved = {
+        streamUrl: saavnResolved.streamUrl,
+        streamSource: saavnResolved.streamSource || 'saavn',
+        title: saavnResolved.title || track?.title,
+        artist: saavnResolved.artist || track?.artist,
+        coverArt: saavnResolved.coverArt || track?.coverArt,
+        duration: saavnResolved.duration || track?.duration,
+        monochromeAttempted: true, // Mark that Monochrome was tried first
       };
       setCachedStream(videoId, nextResolved);
       return nextResolved;
@@ -159,51 +178,17 @@ export function createMusicSources({
     return null;
   }
 
-  async function resolveYoutubeFallback(videoId, track) {
-    if (!pipedResolver) return null;
-
-    const resolved = await pipedResolver(videoId, {
-      title: track?.title,
-      artist: track?.artist,
-      timeoutMs: 2200,
-    });
-
-    if (!resolved?.streamUrl) return null;
-
-    const nextResolved = {
-      ...resolved,
-      streamSource: resolved.streamSource || 'piped',
-    };
-    setCachedStream(videoId, nextResolved);
-    return nextResolved;
-  }
-
-  async function resolveYoutubeBackup(videoId, track) {
-    if (!ytdlpResolver) return null;
-
-    const resolved = await ytdlpResolver(videoId, {
-      title: track?.title,
-      artist: track?.artist,
-      timeoutMs: 2400,
-    });
-
-    if (!resolved?.streamUrl) return null;
-
-    const nextResolved = {
-      ...resolved,
-      streamSource: resolved.streamSource || 'yt-dlp',
-    };
-    setCachedStream(videoId, nextResolved);
-    return nextResolved;
-  }
-
-  async function resolveYoutubeSaavnBackup(videoId, track) {
-    const saavnResolved = await resolveSaavnFallbackTrack(track, { allowConservative: false });
+  async function resolveYoutubeSaavnConservative(videoId, track) {
+    const saavnResolved = await resolveSaavnFallbackTrack(track, { allowConservative: true });
     if (!saavnResolved?.streamUrl) return null;
 
     const nextResolved = {
-      ...saavnResolved,
+      streamUrl: saavnResolved.streamUrl,
       streamSource: saavnResolved.streamSource || 'saavn',
+      title: saavnResolved.title || track?.title,
+      artist: saavnResolved.artist || track?.artist,
+      coverArt: saavnResolved.coverArt || track?.coverArt,
+      duration: saavnResolved.duration || track?.duration,
     };
     setCachedStream(videoId, nextResolved);
     return nextResolved;
@@ -214,7 +199,7 @@ export function createMusicSources({
     async search(query, limit = 20) {
       return youtubeApi.searchSongsSafe(query, limit);
     },
-    async getStreamUrl(track) {
+    async getStreamUrl(track, options = {}) {
       const videoId = normalizeVideoId(track);
       if (!videoId) return null;
 
@@ -223,20 +208,35 @@ export function createMusicSources({
         return cached;
       }
 
+      // Primary: Try Monochrome first, fallback to Saavn
       const resolvedPrimary = await resolveYoutubePrimary(videoId, track);
       if (resolvedPrimary?.streamUrl) {
         return resolvedPrimary;
       }
 
-      const saavnTask = resolveYoutubeSaavnBackup(videoId, track);
-      const resolvedAny = await resolveFirstStream([
-        saavnTask,
-        resolveYoutubeFallback(videoId, track),
-        resolveYoutubeBackup(videoId, track),
-      ], 4800);
+      // Final safety: Conservative Saavn (allow lower match confidence)
+      const conservativeSaavn = await withTimeoutValue(
+        resolveYoutubeSaavnConservative(videoId, track),
+        4500,
+        null
+      );
+      if (conservativeSaavn?.streamUrl) {
+        return conservativeSaavn;
+      }
 
-      if (resolvedAny?.streamUrl) {
-        return resolvedAny;
+      if (youtubeApi && youtubeApi.getStreamDetails) {
+        const backendResolved = await youtubeApi.getStreamDetails(videoId, {
+            ...options,
+            title: track?.title,
+            artist: track?.artist
+        });
+        if (backendResolved?.streamUrl || backendResolved?.directUrl) {
+           return {
+             streamUrl: backendResolved.streamUrl || backendResolved.directUrl,
+             streamSource: backendResolved.streamSource || 'youtube-backend',
+             cacheState: backendResolved.cacheState,
+           };
+        }
       }
 
       return null;

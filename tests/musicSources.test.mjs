@@ -38,8 +38,20 @@ test('youtube source uses monochrome resolver as primary source', async () => {
   assert.equal(resolved.streamSource, 'monochrome');
 });
 
-test('youtube source falls back to piped resolver after monochrome fails', async () => {
-  const restoreSaavn = mockSaavn({ data: [] });
+test('youtube source falls back to saavn after monochrome fails', async () => {
+  const restoreSaavn = mockSaavn({
+    data: [
+      {
+        id: 'saavn-1',
+        title: 'Song',
+        artist: 'Artist',
+        album: 'Album',
+        streamUrl: 'https://saavn.example/full-track.mp3',
+        duration: 201,
+        source: 'saavn',
+      },
+    ],
+  });
   try {
     const youtubeApi = {
       async searchSongsSafe() {
@@ -47,25 +59,15 @@ test('youtube source falls back to piped resolver after monochrome fails', async
       },
     };
 
-    let pipedCalls = 0;
-
     const sources = createMusicSources({
       youtubeApi,
       monochromeResolver: async () => null,
-      pipedResolver: async () => {
-        pipedCalls += 1;
-        return {
-          streamUrl: 'https://piped.example/audio.webm',
-          streamSource: 'piped',
-        };
-      },
     });
 
     const resolved = await sources.youtube.getStreamUrl({ id: 'yt-xyz98765432', title: 'Song', artist: 'Artist' });
     assert.ok(resolved);
-    assert.equal(resolved.streamUrl, 'https://piped.example/audio.webm');
-    assert.equal(resolved.streamSource, 'piped');
-    assert.equal(pipedCalls, 1);
+    assert.equal(resolved.streamUrl, 'https://saavn.example/full-track.mp3');
+    assert.equal(resolved.streamSource, 'saavn');
   } finally {
     restoreSaavn();
   }
@@ -117,7 +119,7 @@ test('youtube source prefers saavn when monochrome uses risky search fallback mo
   }
 });
 
-test('youtube source rejects weak Saavn artist matches and falls back to piped', async () => {
+test('youtube source rejects weak Saavn artist matches entirely (returns null)', async () => {
   const restoreSaavn = mockSaavn({
     data: [
       {
@@ -142,11 +144,6 @@ test('youtube source rejects weak Saavn artist matches and falls back to piped',
     const sources = createMusicSources({
       youtubeApi,
       monochromeResolver: async () => null,
-      pipedResolver: async () => ({
-        streamUrl: 'https://piped.example/unholy-correct.webm',
-        streamSource: 'piped',
-      }),
-      ytdlpResolver: async () => null,
     });
 
     const resolved = await sources.youtube.getStreamUrl({
@@ -156,9 +153,128 @@ test('youtube source rejects weak Saavn artist matches and falls back to piped',
       album: 'Unholy',
     });
 
+    // When artist match is weak and no Monochrome available, should return null (not play wrong song)
+    assert.equal(resolved, null);
+  } finally {
+    restoreSaavn();
+  }
+});
+
+test('youtube source returns null when both monochrome and saavn fail', async () => {
+  const restoreSaavn = mockSaavn({ data: [] });
+  try {
+    const youtubeApi = {
+      async searchSongsSafe() {
+        return { ok: true, data: [] };
+      },
+    };
+
+    const sources = createMusicSources({
+      youtubeApi,
+      monochromeResolver: async () => null,
+    });
+
+    const resolved = await sources.youtube.getStreamUrl({
+      id: 'yt-backup123456',
+      title: 'Fallback Song',
+      artist: 'Fallback Artist',
+    });
+
+    assert.equal(resolved, null);
+  } finally {
+    restoreSaavn();
+  }
+});
+
+test('youtube source can use conservative Saavn fallback as final safety net', async () => {
+  const restoreSaavn = mockSaavn({
+    data: [
+      {
+        id: 'saavn-conservative',
+        title: 'Fallback Song',
+        artist: 'Fallback Artist Live',
+        album: 'Fallback Album',
+        streamUrl: 'https://saavn.example/final-safety.mp3',
+        duration: 222,
+        source: 'saavn',
+      },
+    ],
+  });
+  try {
+    const youtubeApi = {
+      async searchSongsSafe() {
+        return { ok: true, data: [] };
+      },
+      async getStreamDetails() {
+        return { streamUrl: null };
+      },
+    };
+
+    const sources = createMusicSources({
+      youtubeApi,
+      monochromeResolver: async () => null,
+      pipedResolver: async () => null,
+      ytdlpResolver: async () => null,
+    });
+
+    const resolved = await sources.youtube.getStreamUrl({
+      id: 'yt-conservative12',
+      title: 'Fallback Song',
+      artist: 'Fallback Artist',
+      album: 'Fallback Album',
+    });
+
     assert.ok(resolved);
-    assert.equal(resolved.streamUrl, 'https://piped.example/unholy-correct.webm');
-    assert.equal(resolved.streamSource, 'piped');
+    assert.equal(resolved.streamUrl, 'https://saavn.example/final-safety.mp3');
+    assert.equal(resolved.streamSource, 'saavn');
+  } finally {
+    restoreSaavn();
+  }
+});
+
+test('generic non-youtube tracks resolve via saavn only (no youtube search)', async () => {
+  const restoreSaavn = mockSaavn({
+    data: [
+      {
+        id: 'saavn-generic',
+        title: 'Sharat',
+        artist: 'Dhruv',
+        album: 'From Dhurdharh',
+        streamUrl: 'https://saavn.example/generic-track.mp3',
+        duration: 180,
+        source: 'saavn',
+      },
+    ],
+  });
+
+  try {
+    const youtubeApi = {
+      async searchSongsSafe() {
+        return { ok: true, data: [] };
+      },
+      async getStreamDetails() {
+        return { streamUrl: null };
+      },
+    };
+
+    const sources = createMusicSources({
+      youtubeApi,
+      monochromeResolver: async () => null,
+      pipedResolver: async () => null,
+      ytdlpResolver: async () => null,
+    });
+
+    const result = await sources.youtube.getStreamUrl({
+      id: 'track-without-videoid',
+      title: 'Sharat',
+      artist: 'Dhruv',
+      album: 'From Dhurdharh',
+      source: 'unknown',
+    });
+
+    assert.ok(result);
+    assert.equal(result.streamUrl, 'https://saavn.example/generic-track.mp3');
+    assert.equal(result.streamSource, 'saavn');
   } finally {
     restoreSaavn();
   }

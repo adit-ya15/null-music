@@ -270,6 +270,27 @@ async function resolveSaavnPlayableTrack(seedTrack) {
   }
 }
 
+async function resolveGenericPlayableTrack(seedTrack) {
+  if (!seedTrack) return null;
+
+  try {
+    // For non-YouTube tracks, try Saavn only (no YouTube search)
+    const saavnResolved = await resolveSaavnPlayableTrack(seedTrack);
+    if (saavnResolved?.streamUrl) {
+      return {
+        ...saavnResolved,
+        streamSource: saavnResolved.streamSource || 'saavn',
+        title: saavnResolved.title || seedTrack?.title || 'Unknown',
+        artist: saavnResolved.artist || seedTrack?.artist || 'Unknown',
+      };
+    }
+  } catch {
+    // fall through to null
+  }
+
+  return null;
+}
+
 function rankRecommendationCandidates(seedTrack, candidates, options = {}) {
   const { minScore = 0.3, minimumCount = 5, maxCount = 20 } = options;
   const youtubeOnly = (Array.isArray(candidates) ? candidates : [])
@@ -559,11 +580,26 @@ export const PlayerProvider = ({ children }) => {
   const preloadAudioRef = useRef(null);
 
   const recordReliabilityEvent = useCallback((kind, payload = {}) => {
+    const normalizeTelemetrySource = (sourceValue) => {
+      const lower = String(sourceValue || '').toLowerCase();
+      if (lower.includes('saavn')) return 'saavn';
+      if (lower.includes('monochrome')) return 'monochrome';
+      return null;
+    };
+
+    const normalizedPayload =
+      kind === 'resolved' || kind === 'fallback' || kind === 'error'
+        ? {
+          ...payload,
+          streamSource: normalizeTelemetrySource(payload?.streamSource) || payload?.streamSource || null,
+        }
+        : payload;
+
     const entry = {
       id: `${Date.now()}-${Math.random().toString(16).slice(2)}`,
       kind,
       at: Date.now(),
-      ...payload,
+      ...normalizedPayload,
     };
 
     setReliabilityDebug((prev) => ({
@@ -809,65 +845,74 @@ export const PlayerProvider = ({ children }) => {
         return resolved;
       }
 
+      if (track.source === 'monochrome') {
+        try {
+          const resolvedMonochrome = await musicSources.monochrome.getStreamUrl(track);
+          if (resolvedMonochrome?.streamUrl) {
+            const resolved = mergeResolvedTrack(track, {
+              streamUrl: resolvedMonochrome.streamUrl,
+              streamSource: resolvedMonochrome.streamSource || 'monochrome',
+              streamResolvedAt: Date.now(),
+            });
+            if (record) {
+              recordReliabilityEvent('resolved', {
+                trackId: track.id,
+                title: track.title,
+                streamSource: resolved.streamSource || 'monochrome',
+                cacheState: null,
+                reason,
+                refreshed: forceRefresh,
+                urlKind: 'remote',
+              });
+            }
+            return resolved;
+          }
+        } catch {
+          // fall through to generic fallback
+        }
+      }
+
+      const genericFallback = await resolveGenericPlayableTrack(track);
+      if (genericFallback?.streamUrl) {
+        const resolved = mergeResolvedTrack(track, {
+          streamUrl: genericFallback.streamUrl,
+          streamSource: genericFallback.streamSource || track.streamSource || 'unknown',
+          cacheState: genericFallback.cacheState || null,
+          streamResolvedAt: Date.now(),
+        });
+        if (record) {
+          recordReliabilityEvent('fallback', {
+            trackId: track.id,
+            title: track.title,
+            streamSource: resolved.streamSource || 'unknown',
+            message: 'Recovered playback with a generic title/artist fallback.',
+          });
+        }
+        return resolved;
+      }
+
       if (isLikelyPreviewStream(track, existingUrl) || track.source === 'deezer' || track.source === 'listenbrainz') {
         let upgradedToFullTrack = false;
         try {
-          const query = `${String(track?.title || '').trim()} ${String(track?.artist || '').trim()}`.trim();
-          if (query) {
-            const ytCandidates = await youtubeApi.searchSongsSafe(query, 8);
-            if (ytCandidates.ok && Array.isArray(ytCandidates.data) && ytCandidates.data.length > 0) {
-              const rankedCandidates = rankRecommendationCandidates(track, ytCandidates.data, {
-                minScore: 0.15,
-                minimumCount: 1,
-                maxCount: 3,
+          const saavnResolved = await resolveSaavnPlayableTrack(track);
+          if (saavnResolved?.streamUrl) {
+            const resolved = mergeResolvedTrack(track, {
+              streamUrl: saavnResolved.streamUrl,
+              streamSource: saavnResolved.streamSource || 'saavn',
+              streamResolvedAt: Date.now(),
+            });
+
+            if (record) {
+              recordReliabilityEvent('fallback', {
+                trackId: track.id,
+                title: track.title,
+                streamSource: resolved.streamSource || 'saavn',
+                message: 'Replaced preview-only source with full-length Saavn stream.',
               });
-              const winner = rankedCandidates[0] || ytCandidates.data[0];
-              const resolvedYoutube = await musicSources.youtube.getStreamUrl(winner, {
-                preferDirect: isNative,
-              });
-
-              if (resolvedYoutube?.streamUrl) {
-                const resolved = mergeResolvedTrack(track, {
-                  streamUrl: resolvedYoutube.streamUrl,
-                  streamSource: resolvedYoutube.streamSource || 'yt-dlp',
-                  cacheState: resolvedYoutube.cacheState || null,
-                  streamResolvedAt: Date.now(),
-                });
-
-                if (record) {
-                  recordReliabilityEvent('fallback', {
-                    trackId: track.id,
-                    title: track.title,
-                    streamSource: resolved.streamSource || 'yt-dlp',
-                    message: 'Replaced preview-only source with full-length YouTube stream.',
-                  });
-                }
-
-                upgradedToFullTrack = true;
-                return resolved;
-              }
             }
 
-            const saavnResolved = await resolveSaavnPlayableTrack(track);
-            if (saavnResolved?.streamUrl) {
-              const resolved = mergeResolvedTrack(track, {
-                streamUrl: saavnResolved.streamUrl,
-                streamSource: saavnResolved.streamSource || 'saavn',
-                streamResolvedAt: Date.now(),
-              });
-
-              if (record) {
-                recordReliabilityEvent('fallback', {
-                  trackId: track.id,
-                  title: track.title,
-                  streamSource: resolved.streamSource || 'saavn',
-                  message: 'Replaced preview-only source with full-length Saavn stream.',
-                });
-              }
-
-              upgradedToFullTrack = true;
-              return resolved;
-            }
+            upgradedToFullTrack = true;
+            return resolved;
           }
         } catch {
           // Ignore preview replacement failures; continue with existing source fallback.
@@ -902,26 +947,34 @@ export const PlayerProvider = ({ children }) => {
       preferDirect: isNative,
     });
 
-    const streamUrl = details?.streamUrl || existingUrl || null;
+    const streamUrl = details?.streamUrl || null;
     if (!streamUrl) throw new Error("Stream unavailable");
     const resolved = mergeResolvedTrack(track, {
       streamUrl,
-      streamSource: details?.streamSource || (isYoutubeCacheUrl(streamUrl) ? "disk-cache" : "unknown"),
+      streamSource: details?.streamSource || 'monochrome',
       cacheState: details?.cacheState || (isYoutubeCacheUrl(streamUrl) ? "disk" : null),
       cacheCheckedAt: isNative ? Date.now() : lastCacheCheck,
       streamResolvedAt: Date.now(),
     });
     if (record) {
-      const fallbackSources = new Set(['piped', 'ytdl-core', 'jamendo', 'yt-dlp', 'monochrome']);
+      const fallbackSources = new Set(['saavn', 'monochrome']);
       recordReliabilityEvent('resolved', {
         trackId: track.id,
         title: track.title,
-        streamSource: resolved.streamSource || 'unknown',
+        streamSource: resolved.streamSource || 'monochrome',
         cacheState: resolved.cacheState || null,
         reason,
         refreshed: forceRefresh,
         urlKind: isYoutubeCacheUrl(streamUrl) ? 'disk-cache' : 'remote',
       });
+      if (details?.monochromeAttempted && resolved.streamSource === 'saavn') {
+        recordReliabilityEvent('fallback', {
+          trackId: track.id,
+          title: track.title,
+          streamSource: 'monochrome',
+          message: 'Monochrome primary attempt missed, recovered with Saavn fallback.',
+        });
+      }
       if (fallbackSources.has(resolved.streamSource)) {
         recordReliabilityEvent('fallback', {
           trackId: track.id,
@@ -932,7 +985,7 @@ export const PlayerProvider = ({ children }) => {
       }
     }
     return resolved;
-  }, [getResolvedTrackFromCache, mergeResolvedTrack, musicSources.jamendo, musicSources.soundcloud, musicSources.youtube, offlineOnlyMode, recordReliabilityEvent, strictFullTracksMode]);
+  }, [getResolvedTrackFromCache, mergeResolvedTrack, musicSources, offlineOnlyMode, recordReliabilityEvent, strictFullTracksMode]);
 
   /** Pre-resolve stream URL for a track (used for gapless preloading). */
   const preResolveStream = useCallback(async (track) => {
